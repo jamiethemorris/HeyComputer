@@ -1,0 +1,509 @@
+// !$*UTF8*$!
+{
+	"classes" = {
+	};
+	"objectVersion" = "56";
+	"archiveVersion" = "1";
+	"objects" = {
+		"4AB88119A12CBAE6CDE90366" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BC2ACD88D67A414C4BE39414";
+		};
+		"DA98759B80899843E1BF8216" = {
+			"path" = "PhoneView.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"B31E28457BE4737E291586AE" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = (
+				"7415F02E0135BFE42DDFE11B",
+				"141A31F9495F79C55189B63E",
+				"BCF0DEC241B568F881F82176",
+				"4AB88119A12CBAE6CDE90366",
+				"99EAA02818F3A3139319FD46",
+				"607EAF108D2115B495DD3053",
+				"4DFCCEDC27938AD76FC71A74",
+				"C995636633925C243F35ED0E",
+			);
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"001049624B6AD129ABB317B8" = {
+			"path" = "RemoteModel.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"07658B67AA0154E02247C3DE" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"LD_RUNPATH_SEARCH_PATHS" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+				"DEVELOPMENT_TEAM" = "";
+				"TARGETED_DEVICE_FAMILY" = "1";
+				"INFOPLIST_FILE" = "HeyComputerPhone/Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"SDKROOT" = "iphoneos";
+				"SWIFT_VERSION" = "5.0";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.reajev.remote";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"CURRENT_PROJECT_VERSION" = "1";
+			};
+		};
+		"127C19EBE37B828AFDCD8A19" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"LD_RUNPATH_SEARCH_PATHS" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+				"DEVELOPMENT_TEAM" = "";
+				"TARGETED_DEVICE_FAMILY" = "1";
+				"INFOPLIST_FILE" = "HeyComputerPhone/Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"SDKROOT" = "iphoneos";
+				"SWIFT_VERSION" = "5.0";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.reajev.remote";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"CURRENT_PROJECT_VERSION" = "1";
+			};
+		};
+		"1BE9541389E2CAF257199999" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = (
+			);
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"BFB15503854F2955311FBADE" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A8792157CB4F27FB949C035F";
+			"settings" = {
+				"ATTRIBUTES" = (
+					"RemoveHeadersOnCopy",
+				);
+			};
+		};
+		"607EAF108D2115B495DD3053" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "EBD627CBEAA8598867C6F86B";
+		};
+		"4DFCCEDC27938AD76FC71A74" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "001049624B6AD129ABB317B8";
+		};
+		"73EBF6644258C120893E685D" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SDKROOT" = "watchos";
+				"SWIFT_VERSION" = "5.0";
+				"WATCHOS_DEPLOYMENT_TARGET" = "10.0";
+			};
+			"name" = "Debug";
+		};
+		"3C4D5BF81259353996C99C21" = {
+			"path" = "ContentView.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"34A04005BCAF206EEC990BD9" = {
+			"productType" = "com.apple.product-type.application";
+			"productReference" = "A8792157CB4F27FB949C035F";
+			"buildConfigurationList" = "A1C421DAD96DFF096646A753";
+			"productName" = "HeyComputerWatch";
+			"isa" = "PBXNativeTarget";
+			"buildPhases" = (
+				"878A52FC5FF6A57D50B7B870",
+				"E2AA269EB967A8853A258BFA",
+				"41D311A605520FC7B8B9A980",
+			);
+			"dependencies" = (
+			);
+			"name" = "HeyComputerWatch";
+			"buildRules" = (
+			);
+		};
+		"953EFCC79B6AFE087F827753" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "001049624B6AD129ABB317B8";
+		};
+		"B791AB95E2D8325305E4A520" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "34A04005BCAF206EEC990BD9";
+			"targetProxy" = "2AC3A571EF2E342584A15871";
+		};
+		"A8792157CB4F27FB949C035F" = {
+			"path" = "HeyComputerWatch.app";
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.application";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"878A52FC5FF6A57D50B7B870" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = (
+				"AC1416D4B7295ECC4713E86A",
+				"9831B924D35C4713B14D4196",
+				"953EFCC79B6AFE087F827753",
+				"D5B3906592863DD33AFC5412",
+				"0EEAC516F36E5DF1564822C9",
+				"B7F23A06019D3AC018466D3D",
+				"4578412AA7CED75542394C28",
+			);
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"4A817CCB0DB87A555E767CB9" = {
+			"path" = "HeyComputerPhone.app";
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.application";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"4125E00F45AE8A189B1E6436" = {
+			"buildActionMask" = "2147483647";
+			"dstSubfolderSpec" = "16";
+			"isa" = "PBXCopyFilesBuildPhase";
+			"runOnlyForDeploymentPostprocessing" = "0";
+			"dstPath" = "$(CONTENTS_FOLDER_PATH)/Watch";
+			"name" = "Embed Watch Content";
+			"files" = (
+				"BFB15503854F2955311FBADE",
+			);
+		};
+		"0A3E27B8CA818264D75C8D81" = {
+			"isa" = "PBXGroup";
+			"name" = "Products";
+			"children" = (
+				"A8792157CB4F27FB949C035F",
+				"4A817CCB0DB87A555E767CB9",
+			);
+			"sourceTree" = "<group>";
+		};
+		"AD936FCBED631FA67E05C3EA" = {
+			"isa" = "PBXGroup";
+			"sourceTree" = "<group>";
+			"children" = (
+				"CB45DA472F0C7B938BC4DBB9",
+				"B5F664607C4F8ED71D194467",
+				"E17E80AD8E2103CF3FC3FD96",
+				"0A3E27B8CA818264D75C8D81",
+			);
+		};
+		"AC1416D4B7295ECC4713E86A" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "FF9AEBEDC158D3DEDC1809FA";
+		};
+		"2AC3A571EF2E342584A15871" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "244210E48437B6556980A702";
+			"remoteGlobalIDString" = "34A04005BCAF206EEC990BD9";
+			"remoteInfo" = "HeyComputerWatch";
+			"proxyType" = "1";
+		};
+		"9CEEC13202AFBF12EE3ABB99" = {
+			"path" = "Info.plist";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.xml";
+			"sourceTree" = "<group>";
+		};
+		"244210E48437B6556980A702" = {
+			"buildConfigurationList" = "A964DD4136F390AFDF0E5FBA";
+			"targets" = (
+				"34A04005BCAF206EEC990BD9",
+				"8DE15C796A823A9D55AFA8FF",
+			);
+			"developmentRegion" = "en";
+			"knownRegions" = (
+				"en",
+				"Base",
+			);
+			"isa" = "PBXProject";
+			"compatibilityVersion" = "Xcode 14.0";
+			"productRefGroup" = "0A3E27B8CA818264D75C8D81";
+			"projectDirPath" = "";
+			"attributes" = {
+				"LastSwiftUpdateCheck" = "1620";
+				"BuildIndependentTargetsInParallel" = "YES";
+				"LastUpgradeCheck" = "1620";
+				"TargetAttributes" = {
+					"34A04005BCAF206EEC990BD9" = {
+						"CreatedOnToolsVersion" = "16.2";
+					};
+					"8DE15C796A823A9D55AFA8FF" = {
+						"CreatedOnToolsVersion" = "16.2";
+					};
+				};
+			};
+			"hasScannedForEncodings" = "0";
+			"projectRoot" = "";
+			"mainGroup" = "AD936FCBED631FA67E05C3EA";
+		};
+		"BCF0DEC241B568F881F82176" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "8A9C64675E6619E44031EB91";
+		};
+		"A258E50EC774A33A60F56DF9" = {
+			"path" = "Info.plist";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.xml";
+			"sourceTree" = "<group>";
+		};
+		"A964DD4136F390AFDF0E5FBA" = {
+			"isa" = "XCConfigurationList";
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"buildConfigurations" = (
+				"73EBF6644258C120893E685D",
+				"0B0C687DF8B6B8DC790B519C",
+			);
+		};
+		"BC2ACD88D67A414C4BE39414" = {
+			"path" = "PairingCode.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"E2AA269EB967A8853A258BFA" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = (
+			);
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"141A31F9495F79C55189B63E" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "DA98759B80899843E1BF8216";
+		};
+		"99EAA02818F3A3139319FD46" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "9960258CB59A09289F67B5E0";
+		};
+		"A1C421DAD96DFF096646A753" = {
+			"isa" = "XCConfigurationList";
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"buildConfigurations" = (
+				"6C7EFF6369083C8E1F2B1994",
+				"DD75E2CB1C510A828AC72D96",
+			);
+		};
+		"B7F23A06019D3AC018466D3D" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "9960258CB59A09289F67B5E0";
+		};
+		"FF9AEBEDC158D3DEDC1809FA" = {
+			"path" = "HeyComputerWatchApp.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"9960258CB59A09289F67B5E0" = {
+			"path" = "CompanionLink.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"8DE15C796A823A9D55AFA8FF" = {
+			"buildConfigurationList" = "C78659D8604855DF0BD4CBFA";
+			"productReference" = "4A817CCB0DB87A555E767CB9";
+			"productType" = "com.apple.product-type.application";
+			"productName" = "HeyComputerPhone";
+			"isa" = "PBXNativeTarget";
+			"buildPhases" = (
+				"B31E28457BE4737E291586AE",
+				"1BE9541389E2CAF257199999",
+				"F341FC3AA0AF5A4DE6E75FD0",
+				"4125E00F45AE8A189B1E6436",
+			);
+			"dependencies" = (
+				"B791AB95E2D8325305E4A520",
+			);
+			"name" = "HeyComputerPhone";
+			"buildRules" = (
+			);
+		};
+		"E17E80AD8E2103CF3FC3FD96" = {
+			"path" = "HeyComputerWatch";
+			"isa" = "PBXGroup";
+			"children" = (
+				"FF9AEBEDC158D3DEDC1809FA",
+				"EBD627CBEAA8598867C6F86B",
+				"001049624B6AD129ABB317B8",
+				"3C4D5BF81259353996C99C21",
+				"9CEEC13202AFBF12EE3ABB99",
+			);
+			"sourceTree" = "<group>";
+		};
+		"B5F664607C4F8ED71D194467" = {
+			"path" = "Shared";
+			"isa" = "PBXGroup";
+			"sourceTree" = "<group>";
+			"children" = (
+				"BC2ACD88D67A414C4BE39414",
+				"9960258CB59A09289F67B5E0",
+				"54E097C313A9B0FBAD510A5D",
+			);
+		};
+		"9FED79DF61A511792238D85C" = {
+			"path" = "HeyComputerPhoneApp.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"6C7EFF6369083C8E1F2B1994" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"LD_RUNPATH_SEARCH_PATHS" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"DEVELOPMENT_TEAM" = "";
+				"TARGETED_DEVICE_FAMILY" = "4";
+				"INFOPLIST_FILE" = "HeyComputerWatch/Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"SUPPORTED_PLATFORMS" = "watchos watchsimulator";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"SDKROOT" = "watchos";
+				"SWIFT_VERSION" = "5.0";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.reajev.remote.watch";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"WATCHOS_DEPLOYMENT_TARGET" = "10.0";
+			};
+			"name" = "Debug";
+		};
+		"7415F02E0135BFE42DDFE11B" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "9FED79DF61A511792238D85C";
+		};
+		"41D311A605520FC7B8B9A980" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = (
+			);
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"F341FC3AA0AF5A4DE6E75FD0" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = (
+			);
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"0B0C687DF8B6B8DC790B519C" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+				"SWIFT_COMPILATION_MODE" = "wholemodule";
+				"WATCHOS_DEPLOYMENT_TARGET" = "10.0";
+				"SWIFT_VERSION" = "5.0";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SDKROOT" = "watchos";
+			};
+			"name" = "Release";
+		};
+		"0EEAC516F36E5DF1564822C9" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BC2ACD88D67A414C4BE39414";
+		};
+		"C78659D8604855DF0BD4CBFA" = {
+			"isa" = "XCConfigurationList";
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"buildConfigurations" = (
+				"127C19EBE37B828AFDCD8A19",
+				"07658B67AA0154E02247C3DE",
+			);
+		};
+		"D5B3906592863DD33AFC5412" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "3C4D5BF81259353996C99C21";
+		};
+		"EBD627CBEAA8598867C6F86B" = {
+			"path" = "RemoteClient.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"8A9C64675E6619E44031EB91" = {
+			"path" = "QRScanner.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"9831B924D35C4713B14D4196" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "EBD627CBEAA8598867C6F86B";
+		};
+		"CB45DA472F0C7B938BC4DBB9" = {
+			"path" = "HeyComputerPhone";
+			"isa" = "PBXGroup";
+			"sourceTree" = "<group>";
+			"children" = (
+				"9FED79DF61A511792238D85C",
+				"DA98759B80899843E1BF8216",
+				"8A9C64675E6619E44031EB91",
+				"A258E50EC774A33A60F56DF9",
+			);
+		};
+		"DD75E2CB1C510A828AC72D96" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"LD_RUNPATH_SEARCH_PATHS" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"DEVELOPMENT_TEAM" = "";
+				"TARGETED_DEVICE_FAMILY" = "4";
+				"INFOPLIST_FILE" = "HeyComputerWatch/Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"SUPPORTED_PLATFORMS" = "watchos watchsimulator";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"SDKROOT" = "watchos";
+				"SWIFT_VERSION" = "5.0";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.reajev.remote.watch";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"WATCHOS_DEPLOYMENT_TARGET" = "10.0";
+			};
+			"name" = "Release";
+		};
+		"54E097C313A9B0FBAD510A5D" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "RelayRequest.swift";
+			"sourceTree" = "<group>";
+		};
+		"4578412AA7CED75542394C28" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "54E097C313A9B0FBAD510A5D";
+		};
+		"C995636633925C243F35ED0E" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "54E097C313A9B0FBAD510A5D";
+		};
+	};
+	"rootObject" = "244210E48437B6556980A702";
+}
