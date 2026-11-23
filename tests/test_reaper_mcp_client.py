@@ -141,6 +141,15 @@ class ReaperMCPClientTests(unittest.TestCase):
                 self.assertEqual(client.call("structured", {})["tmpdir"], expected)
             self.assertEqual(os.environ["TMPDIR"], "/fixture-worker-scratch")
 
+    def test_child_path_reaches_tools_outside_the_gui_launch_path(self):
+        # A Dock-launched REAPER gives the helper only the system PATH, which has no uvx.
+        from heycomputer.reaper_mcp_client import _child_env
+        with patch.dict(os.environ, {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}):
+            path = _child_env()["PATH"].split(":")
+        self.assertEqual(path[:4], ["/usr/bin", "/bin", "/usr/sbin", "/sbin"])
+        for folder in ("/opt/homebrew/bin", "/usr/local/bin", os.path.expanduser("~/.local/bin")):
+            self.assertIn(folder, path)
+
     def test_tool_and_rpc_errors(self):
         with self.client() as client:
             for name, message in [("rpc_error", "Fixture invalid arguments"),

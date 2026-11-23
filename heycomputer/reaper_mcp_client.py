@@ -25,6 +25,14 @@ _UNKNOWN_OUTCOME = "The tool outcome is unknown; check REAPER before trying agai
 
 def _child_env():
     env = dict(os.environ, REAPER_MCP_NO_SUPERSEDE="1")
+    # A Dock-launched REAPER passes only the system PATH, which lacks uvx. Append
+    # the usual install folders; inherited entries keep priority.
+    path = [p for p in env.get("PATH", "").split(":") if p]
+    for folder in ("/opt/homebrew/bin", "/usr/local/bin", os.path.expanduser("~/.local/bin"),
+                   os.path.expanduser("~/.cargo/bin")):
+        if folder not in path:
+            path.append(folder)
+    env["PATH"] = ":".join(path)
     if sys.platform == "darwin":
         # A GUI-launched REAPER normally uses the macOS per-user temp directory,
         # not a TMPDIR override inherited by the HeyComputer worker.

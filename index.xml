@@ -66,6 +66,67 @@
         <source file="scripts/setup.sh" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.0/scripts/setup.sh</source>
         <source file="scripts/setup_wake.sh" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.0/scripts/setup_wake.sh</source>
       </version>
+      <version name="0.2.1" author="jamiethemorris" time="2026-11-23T08:00:00Z">
+        <changelog>Fix ReaperMCP not starting when REAPER is launched from the Dock or Finder.</changelog>
+        <source file="reaper/HeyComputer.lua" platform="darwin" main="main">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/HeyComputer.lua</source>
+        <source file="heycomputer/__init__.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/__init__.py</source>
+        <source file="heycomputer/audio.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/audio.py</source>
+        <source file="heycomputer/automation.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/automation.py</source>
+        <source file="heycomputer/capabilities.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/capabilities.py</source>
+        <source file="heycomputer/chatgpt_auth.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/chatgpt_auth.py</source>
+        <source file="heycomputer/chatgpt_responses.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/chatgpt_responses.py</source>
+        <source file="heycomputer/fx_chain.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/fx_chain.py</source>
+        <source file="heycomputer/fx_parameters.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/fx_parameters.py</source>
+        <source file="heycomputer/item_repeat.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/item_repeat.py</source>
+        <source file="heycomputer/item_targets.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/item_targets.py</source>
+        <source file="heycomputer/local_transcription.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/local_transcription.py</source>
+        <source file="heycomputer/mcp_catalog.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/mcp_catalog.py</source>
+        <source file="heycomputer/mcp_companion.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/mcp_companion.py</source>
+        <source file="heycomputer/mcp_ipc.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/mcp_ipc.py</source>
+        <source file="heycomputer/mcp_loop.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/mcp_loop.py</source>
+        <source file="heycomputer/mcp_responses.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/mcp_responses.py</source>
+        <source file="heycomputer/midi.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/midi.py</source>
+        <source file="heycomputer/protocol.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/protocol.py</source>
+        <source file="heycomputer/providers.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/providers.py</source>
+        <source file="heycomputer/reaper_mcp_client.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/reaper_mcp_client.py</source>
+        <source file="heycomputer/settings.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/settings.py</source>
+        <source file="heycomputer/speech.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/speech.py</source>
+        <source file="heycomputer/track_plan.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/track_plan.py</source>
+        <source file="heycomputer/ui_memory.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/ui_memory.py</source>
+        <source file="heycomputer/vision.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/vision.py</source>
+        <source file="heycomputer/vision_macos.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/vision_macos.py</source>
+        <source file="heycomputer/voice_output.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/voice_output.py</source>
+        <source file="heycomputer/wake.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/wake.py</source>
+        <source file="heycomputer/worker.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/heycomputer/worker.py</source>
+        <source file="pyproject.toml" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/pyproject.toml</source>
+        <source file="reaper/HeyComputer - Send.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/HeyComputer%20-%20Send.lua</source>
+        <source file="reaper/HeyComputer - Talk or stop and send.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/HeyComputer%20-%20Talk%20or%20stop%20and%20send.lua</source>
+        <source file="reaper/lib/JSON-LICENSE.txt" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/JSON-LICENSE.txt</source>
+        <source file="reaper/lib/actions.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/actions.lua</source>
+        <source file="reaper/lib/automation.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/automation.lua</source>
+        <source file="reaper/lib/capabilities.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/capabilities.lua</source>
+        <source file="reaper/lib/executor.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/executor.lua</source>
+        <source file="reaper/lib/fx_chain.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/fx_chain.lua</source>
+        <source file="reaper/lib/fx_parameters.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/fx_parameters.lua</source>
+        <source file="reaper/lib/item_repeat.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/item_repeat.lua</source>
+        <source file="reaper/lib/item_targets.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/item_targets.lua</source>
+        <source file="reaper/lib/json.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/json.lua</source>
+        <source file="reaper/lib/mcp_companion.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/mcp_companion.lua</source>
+        <source file="reaper/lib/mcp_ipc.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/mcp_ipc.lua</source>
+        <source file="reaper/lib/midi.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/midi.lua</source>
+        <source file="reaper/lib/runtime.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/runtime.lua</source>
+        <source file="reaper/lib/setup.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/setup.lua</source>
+        <source file="reaper/lib/test_bridge.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/test_bridge.lua</source>
+        <source file="reaper/lib/theme.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/theme.lua</source>
+        <source file="reaper/lib/track_plan.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/track_plan.lua</source>
+        <source file="reaper/lib/voice.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/voice.lua</source>
+        <source file="reaper/lib/wake.lua" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/reaper/lib/wake.lua</source>
+        <source file="scripts/install_wake_model.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/scripts/install_wake_model.py</source>
+        <source file="scripts/panel_setup.sh" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/scripts/panel_setup.sh</source>
+        <source file="scripts/run_worker.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/scripts/run_worker.py</source>
+        <source file="scripts/setup.sh" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/scripts/setup.sh</source>
+        <source file="scripts/setup_wake.sh" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.1/scripts/setup_wake.sh</source>
+      </version>
     </reapack>
   </category>
 </index>
