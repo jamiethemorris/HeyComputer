@@ -1,6 +1,19 @@
 -- @description HeyComputer - quiet voice and text commands for REAPER
--- @version 0.1.0
+-- @version 0.2.0
 -- @author HeyComputer contributors
+-- @metapackage
+-- @provides
+--   [darwin main=main] HeyComputer.lua > reaper/
+--   [darwin nomain] HeyComputer - *.lua > reaper/
+--   [darwin nomain] lib/* > reaper/lib/
+--   [darwin nomain] ../heycomputer/*.py > heycomputer/
+--   [darwin nomain] ../pyproject.toml > pyproject.toml
+--   [darwin nomain] ../scripts/setup.sh > scripts/
+--   [darwin nomain] ../scripts/panel_setup.sh > scripts/
+--   [darwin nomain] ../scripts/setup_wake.sh > scripts/
+--   [darwin nomain] ../scripts/install_wake_model.py > scripts/
+--   [darwin nomain] ../scripts/run_worker.py > scripts/
+-- @link https://github.com/jamiethemorris/HeyComputer
 -- Load this file through Actions > Show action list > ReaScript: Load.
 local R = reaper
 if not R.ImGui_GetBuiltinPath then
@@ -56,6 +69,7 @@ local function quote(s)
   return '"'..s..'"'
 end
 local python = root.."/.venv/bin/python"
+local setup = require('setup').new(R,root,runtime,quote)
 S = {text="", status="Starting…", message="", history={}, settings=false,
   config={use_jev=false,fallback_provider="chatgpt",allow_lua=false,vision_enabled=false,mic_device="",mic_channel=1,aliases=""},
   devices={},keys={},presets={},newkeys={openrouter="",openai="",typesafe=""},
@@ -139,7 +153,7 @@ local function poll()
   if not visual_guard() then return end
   if not S.ready and not S.timed_out then
     if read(inbox.."/ready.json") then S.ready=true; send("settings"); S.status="Ready"
-    elseif now-S.started>12 then S.status="Helper unavailable"; S.message="Run scripts/setup.sh in the HeyComputer folder, then reopen this panel. Startup logs are in REAPER’s resource folder: Data/HeyComputer/worker.log." end
+    elseif now-S.started>12 and S.status~='Setup needed' then S.status="Helper unavailable"; S.message="Check Data/HeyComputer/worker.log or run setup to repair missing dependencies." end
   end
   S.meter=read_json(inbox.."/meter.json") or S.meter
   local transcript=read_json(inbox.."/transcript.json")
@@ -750,7 +764,17 @@ local function frame()
       end
       ImGui.EndDisabled(ctx)
     end
-    if S.settings then settings_view() else command_view() end
+    local wake_info=S.meter and S.meter.wake or S.wake or {}
+    local repair=(S.message or ''):find('scripts/setup.sh',1,true) or (wake_info.status or ''):find('scripts/setup.sh',1,true)
+    local needs_setup=not S.ready and (S.status=='Setup needed' or S.status=='Helper unavailable')
+    if setup.phase or needs_setup then
+      if not setup.phase and S.message~='' then ImGui.TextWrapped(ctx,S.message) end
+      setup.draw(ImGui,ctx)
+    else
+      if S.settings then settings_view() else command_view() end
+      if (S.settings or repair) and not S.pending and not S.recording then setup.draw(ImGui,ctx) end
+    end
+    if setup.phase then S.ready=false; S.timed_out=true end
     ImGui.End(ctx)
   end
   ImGui.PopStyleVar(ctx,3); ImGui.PopStyleColor(ctx,colors)
@@ -780,8 +804,8 @@ Actions.attach(session)
 if not Actions.register(dir) then
   S.message="Could not register shortcut actions. Load the HeyComputer Talk and Send scripts manually from the Actions list."
 end
-if not R.file_exists(python) then
-  S.status="Setup needed"; S.message="Run scripts/setup.sh in the HeyComputer folder, then reopen this panel."
+if setup.phase or not R.file_exists(python) then
+  S.status="Setup needed"
 else
   -- ExecProcess launches directly; paths are quoted, never model-controlled.
   R.ExecProcess(quote(python).." "..quote(root.."/scripts/run_worker.py").." --directory "..quote(inbox),-2)

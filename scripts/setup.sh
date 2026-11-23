@@ -4,7 +4,17 @@
 set -eu
 HEYCOMPUTER_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$HEYCOMPUTER_ROOT"
-python3 -m venv .venv
+# The panel supplies an absolute interpreter; manual installs default to python3.
+if [ ! -e .venv/bin/python ] && [ ! -L .venv/bin/python ]; then
+  "${PYTHON:-python3}" -m venv .venv
+fi
+# Check the interpreter that will actually run pip. Never replace an old venv
+# silently, or invoke a macOS developer-tools launcher through a venv symlink.
+if { [ "$(uname -s)" = Darwin ] && [ .venv/bin/python -ef /usr/bin/python3 ]; } ||
+   ! .venv/bin/python -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+  printf '%s\n' 'Setup needs Python 3.11 or newer. Move the unusable .venv aside and rerun setup with a supported Python.' >&2
+  exit 1
+fi
 # Local Whisper is the default transcription on Apple Silicon; it cannot run elsewhere.
 if [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
   EXTRAS='.[wake,local-speech]'
