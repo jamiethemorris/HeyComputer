@@ -7,8 +7,8 @@ from .protocol import PlanError
 
 
 INSTALL_HELP = (
-    "MLX Whisper needs a native Apple Silicon Python environment. From the HeyComputer folder, run "
-    ".venv/bin/python -m pip install -e '.[local-speech]' and reopen the panel."
+    "Local Whisper is not installed. On an Apple Silicon Mac, run sh scripts/setup.sh from the HeyComputer "
+    "folder and reopen the panel. Otherwise choose another transcription provider in Settings under Voice input."
 )
 
 

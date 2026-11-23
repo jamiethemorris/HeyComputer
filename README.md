@@ -41,17 +41,19 @@ cd HeyComputer
 sh scripts/setup.sh
 ```
 
-1. The setup command installs the helper dependencies into an isolated `.venv`;
-   it does not change REAPER’s audio configuration.
+1. The setup command installs everything HeyComputer runs locally into an isolated
+   `.venv`: the helper, the wake-word engine and its small model, and on Apple
+   Silicon Macs local Whisper transcription. That last part is a large download.
+   It does not change REAPER’s audio configuration. Rerun it after updating.
 2. In REAPER, open **Actions → Show action list → New action → Load ReaScript**.
    Select `reaper/HeyComputer.lua`, then run it.
 3. In **Settings → Account and model**, click **Sign in** to use your ChatGPT plan for
-   conversation (the default for new installs; Jev is off). Transcription defaults to
-   OpenRouter: under **Account and model → Other providers** enter an **OpenRouter key**
-   (stored in macOS Keychain under the service `HeyComputer`; `OPENROUTER_API_KEY`
-   overrides it when inherited by REAPER), or choose **MLX Whisper (local)** under
-   **Voice input** to need no key. Click **Save all settings**. API use is billed
-   separately from chat subscriptions.
+   conversation (the default for new installs; Jev is off). On Apple Silicon, Talk is
+   transcribed locally by MLX Whisper and needs no key. On other machines
+   transcription defaults to OpenRouter: under **Account and model → Other providers**
+   enter an **OpenRouter key** (stored in macOS Keychain under the service
+   `HeyComputer`; `OPENROUTER_API_KEY` overrides it when inherited by REAPER). Click
+   **Save all settings**. API use is billed separately from chat subscriptions.
 4. Select a microphone device and its **one-based input channel**, then save.
    This device is independent of REAPER’s track recording input. macOS may ask
    for microphone access when recording starts.
@@ -80,10 +82,12 @@ is preserved.
 
 The ChatGPT endpoint is fixed. The helper stores its credentials in an owner-only file under REAPER’s `Data/HeyComputer`, separate from settings and session history. Use **Sign out** to clear the local tokens; if revocation cannot be confirmed, disconnect the app in ChatGPT Settings as well.
 
-**To transcribe Talk locally on Apple Silicon:** After normal setup, run
-`.venv/bin/python -m pip install -e '.[local-speech]'` from the HeyComputer folder.
-Reopen the panel, choose **MLX Whisper (local)** under **Settings → Voice input → Transcription**,
-and click **Save all settings**. The default English model is
+**Talk transcription is local on Apple Silicon:** a ChatGPT sign-in cannot transcribe audio, so
+new installs on Apple Silicon Macs use **MLX Whisper (local)** and `sh scripts/setup.sh` installs it.
+No API key is needed. Existing installs keep their saved provider; to switch, rerun
+`sh scripts/setup.sh`, reopen the panel, choose **MLX Whisper (local)** under
+**Settings → Voice input**, and click **Save all settings**. On other machines the default stays
+OpenRouter, which needs a key. The default English model is
 `mlx-community/whisper-base.en-mlx`. You can change the Model ID to another MLX
 Whisper checkpoint. The model may download on the first submitted recording;
 the recording stays in memory on your Mac. There is no transcription API key,
@@ -189,14 +193,9 @@ speech; the full response remains in the conversation.
 
 ### Local wake and stop words (optional)
 
-Run once from the repository root:
-
-```sh
-sh scripts/setup_wake.sh
-```
-
-This installs the optional `sherpa-onnx` and `sentencepiece` dependencies and
-downloads a checksum-verified English keyword model from the upstream project.
+`sh scripts/setup.sh` already installs what this needs: the `sherpa-onnx` and
+`sentencepiece` dependencies and a checksum-verified English keyword model from the
+upstream project. The feature stays off until you enable it.
 Only about 5.5 MB of model files are retained under REAPER's
 `Data/HeyComputer/models/kws-en`; model files are not part of this repository.
 For a portable/nonstandard resource folder, pass `--runtime /path/to/Data/HeyComputer`.
@@ -982,7 +981,7 @@ establish real capture/input behavior before macOS permissions are granted.
 Wake-word tests cover shared microphone lifetime, bounded idle queues, private
 log rotation, stale/replayed detections, stop-word transcript cleanup and timeout
 discard without uploading. The normal unit suite uses a fake detector; optional
-model checks require `sh scripts/setup_wake.sh` and a local speech fixture.
+model checks require the installed wake-word model and a local speech fixture.
 
 ### Local test commands
 

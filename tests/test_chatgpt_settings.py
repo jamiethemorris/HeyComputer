@@ -34,7 +34,10 @@ class ChatGPTSettingsTests(unittest.TestCase):
         config = load_config(None)  # no settings.json yet
         self.assertIs(config["use_jev"], False)
         self.assertEqual(service_config(config, "fallback"), ("chatgpt", preset["endpoint"], preset["model"]))
-        self.assertEqual(config["transcription_provider"], "openrouter")
+        # A ChatGPT sign-in cannot transcribe, so Talk is local wherever Whisper can run.
+        from heycomputer.settings import APPLE_SILICON
+        expected = "mlx_whisper" if APPLE_SILICON else "openrouter"
+        self.assertEqual(service_config(config, "transcription")[0], expected)
         # A settings file with no provider keys is an old install and keeps its direct routes.
         self.assertEqual(load_config({})["fallback_provider"], "openai")
 

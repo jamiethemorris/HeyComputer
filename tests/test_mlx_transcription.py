@@ -64,7 +64,7 @@ class MlxTranscriptionTests(unittest.TestCase):
 
     def test_missing_package_is_actionable(self):
         with patch.dict(sys.modules, {"mlx_whisper": None}):
-            with self.assertRaisesRegex(PlanError, r"pip install .*local-speech"):
+            with self.assertRaisesRegex(PlanError, r"scripts/setup\.sh.*another transcription provider"):
                 providers.transcribe(wav_fixture(), self.config, [])
 
     def test_model_failure_is_actionable(self):

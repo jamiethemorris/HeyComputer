@@ -212,7 +212,7 @@ class WakeTests(unittest.TestCase):
             worker.configure_wake()
             self.addCleanup(worker.wake.close)
             wait_for(lambda: worker.wake.error)
-            self.assertIn("setup_wake.sh", worker.wake.error)
+            self.assertIn("scripts/setup.sh", worker.wake.error)
             with patch("heycomputer.providers.plan", return_value={"kind": "reply", "message": "Still usable"}):
                 worker.dispatch({"id": "j1", "kind": "plan", "text": "hello"})
                 response = worker.directory/"j1.response.json"

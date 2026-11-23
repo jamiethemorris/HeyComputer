@@ -1,5 +1,7 @@
 """Service presets and validation; credentials live outside settings."""
 import os
+import platform
+import sys
 from urllib.parse import urlsplit
 
 from .protocol import PlanError
@@ -31,8 +33,10 @@ DEFAULTS = {"use_jev": False, "allow_lua": False, "mic_device": "", "mic_channel
             "wake_threshold": 0.35, "wake_log_enabled": True,
             "speech_enabled": False, "speech_voice": "", "speech_device": "",
             "speech_channel": 1, "speech_channels": 2, "speech_volume": .2}
-# New installs: conversation through the ChatGPT account, everything else OpenRouter.
-NEW_INSTALL_PROVIDER = {"fallback": "chatgpt"}
+# New installs: conversation through the ChatGPT account, which cannot transcribe,
+# so Talk uses local Whisper where it can run. Everything else is OpenRouter.
+APPLE_SILICON = sys.platform == "darwin" and platform.machine() == "arm64"
+NEW_INSTALL_PROVIDER = {"fallback": "chatgpt", "transcription": "mlx_whisper" if APPLE_SILICON else "openrouter"}
 for service, presets in PRESETS.items():
     provider = NEW_INSTALL_PROVIDER.get(service, "openrouter")
     DEFAULTS[service + "_provider"] = provider

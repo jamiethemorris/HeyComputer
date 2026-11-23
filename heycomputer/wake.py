@@ -107,10 +107,10 @@ class Detector:
             import sherpa_onnx
             import sentencepiece
         except ImportError as exc:
-            raise PlanError("Run scripts/setup_wake.sh, then reopen HeyComputer to enable wake words.") from exc
+            raise PlanError("Run scripts/setup.sh, then reopen HeyComputer to enable wake words.") from exc
         directory = Path(directory)
         if not all((directory / name).is_file() for name in MODEL_FILES):
-            raise PlanError("Wake-word model is missing. Run scripts/setup_wake.sh, then reopen HeyComputer.")
+            raise PlanError("Wake-word model is missing. Run scripts/setup.sh, then reopen HeyComputer.")
         wake, stop = phrases(config)
         tokenizer = sentencepiece.SentencePieceProcessor(model_file=str(directory / "bpe.model"))
         self.keywords = {
