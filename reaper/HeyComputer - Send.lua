@@ -1,6 +1,6 @@
 -- @description HeyComputer - Send
 -- @version 0.1.0
--- @author HeyComputer contributors
+-- @author jamiethemorris
 local _,script=reaper.get_action_context()
 local dir=script:match("^(.*)[/\\]")
 package.path=dir.."/lib/?.lua;"..package.path

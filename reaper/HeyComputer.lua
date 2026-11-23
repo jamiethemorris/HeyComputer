@@ -1,6 +1,6 @@
 -- @description HeyComputer - quiet voice and text commands for REAPER
 -- @version 0.2.0
--- @author HeyComputer contributors
+-- @author jamiethemorris
 -- @metapackage
 -- @provides
 --   [darwin main=main] HeyComputer.lua > reaper/
