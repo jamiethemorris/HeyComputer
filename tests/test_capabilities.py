@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from heycomputer import providers
+from routing_fixture import OPENROUTER_DEFAULTS
 from heycomputer.capabilities import quick_plan, action_candidates
 from heycomputer.protocol import action, validate_result, PlanError
 
@@ -31,7 +32,7 @@ class CapabilitiesTests(unittest.TestCase):
     def test_exact_installed_script_launch_uses_corrections_and_no_model(self, key, request):
         snapshot = dict(SNAPSHOT, launch_actions=[{"id": "_RSmain", "name": "Script: ReaSplice.lua"},
                                                  {"id": "_RSreload", "name": "Script: Reload ReaSplice.lua"}])
-        config = {"speech_corrections": "ReSplice = ReaSplice"}
+        config = dict(OPENROUTER_DEFAULTS, speech_corrections="ReSplice = ReaSplice")
         for text in ("open ReaSplice", "run ReaSplice Lua script", "please launch Rea Splice", "open ReSplice"):
             result = providers.plan(text, snapshot, config, [{"kind": "reply"}])
             self.assertEqual(result["actions"], [op("launch_action", "_RSmain")])
@@ -110,7 +111,7 @@ class CapabilitiesTests(unittest.TestCase):
     @patch("heycomputer.providers.jev_plan")
     @patch("heycomputer.providers.openai_plan", return_value={"kind": "reply", "message": "Which range?"})
     def test_extended_requests_bypass_the_track_recipe(self, fallback, jev, key):
-        providers.plan("Create a red region called Chorus", SNAPSHOT, {}, [])
+        providers.plan("Create a red region called Chorus", SNAPSHOT, OPENROUTER_DEFAULTS, [])
         jev.assert_not_called(); fallback.assert_called_once()
 
     def test_large_project_cannot_silently_edit_only_some_items(self):

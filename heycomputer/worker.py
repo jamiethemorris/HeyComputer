@@ -3,18 +3,38 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import threading
 import time
 
 from . import providers
-from .protocol import PlanError
+from . import settings
+from .protocol import PlanError, validate_result
 from .settings import DEFAULTS, PRESETS, KEY_PROVIDERS, load_config, service_config
-from .remote import RemoteControl
 from .speech import correction_pairs, correct_text
 from .migration import import_legacy_settings
 from .audio import Recorder
 from .wake import ActivationLog, WakeListener, phrases, strip_stop_phrase
 from .voice_output import VoiceOutput, validate as validate_voice, FIELDS as VOICE_FIELDS
+
+
+# Keep legacy-only and conversational requests together; never split a prompt.
+MCP_INTENT = re.compile(r'\b(tracks?|project|markers?|transport|selection|routing|sends?|mute|unmute|solo|unsolo|pan|faders?|volume)\b', re.I)
+PLUGIN_INTENT = re.compile(
+    r'\b(fx|effects?|plug-?ins?|vst3?|presets?|eq|pro[- ]?q|shelf|bands?|filter|cutoff|hertz|k?hz|decay|'
+    r'reverb|compressor|threshold|parameters?|knobs?)\b', re.I)
+LEGACY_INTENT = re.compile(r'\b(open|show window|gui|visual|click|drag|midi|items?|scripts?|actions?|explain|how (?:do|can|should) i)\b', re.I)
+MCP_REQUEST_SECONDS = 120  # Leave time for cleanup and IPC before the panel's 150s timeout.
+
+
+def mcp_intent(text):
+    from .mcp_catalog import families
+    if LEGACY_INTENT.search(text):
+        return False
+    # Return/send and envelope workflows can now inspect and set native FX in
+    # the same loop. Standalone plugin setup still uses the existing planner.
+    return bool(families(text) & {'routing', 'env', 'parallel'} or
+                MCP_INTENT.search(text) and not PLUGIN_INTENT.search(text))
 
 
 def atomic_json(path, value):
@@ -44,7 +64,6 @@ class Worker:
         self.started = time.time()
         self.shutdown = False
         self.output_lock = threading.Lock()
-        self.remote = RemoteControl(directory)
         self.desktop = None
         self.cancel_visual = threading.Event()
         self.visual_active = False
@@ -142,28 +161,37 @@ class Worker:
         except PlanError as exc:
             return {"error": str(exc), "hosts": []}
 
+    def check_project(self, snapshot, require_revision, opened_fx=None, *, job_id=None):
+        from .vision import VisualStopped
+        path = self.directory / 'visual-guard.json'
+        try:
+            with path.open() as guard:
+                live = json.load(guard)
+                age = time.time() - os.fstat(guard.fileno()).st_mtime
+            if (self.shutdown or not 0 <= age <= 3
+                    or not isinstance(live, dict) or live.get('recording') is not False
+                    or job_id is not None and live.get('job') != job_id
+                    or not snapshot.get('project') or live.get('project') != snapshot['project']
+                    or require_revision and (type(snapshot.get('revision')) is not int or
+                                             type(live.get('revision')) is not int or
+                                             live['revision'] != snapshot.get('revision'))
+                    or opened_fx and live.get('opened_fx') != opened_fx.get('guid')):
+                raise ValueError()
+        except (OSError, ValueError):
+            raise VisualStopped('REAPER changed project, started recording, or is no longer responding. Check REAPER before retrying.') from None
+
     def visual_plan(self, text, history, config, snapshot, job_id, opened_fx=None):
         from . import vision
         if config.get("vision_enabled") is not True:
             raise PlanError("Visual control is disabled.")
+        credentials = self.chatgpt_credentials(config)
+        if credentials and not credentials["access_token"]:
+            raise PlanError("Sign in with ChatGPT in Settings before using visual control.")
+
         first = True
         def guard():
             nonlocal first
-            path = self.directory / "visual-guard.json"
-            try:
-                if self.shutdown or time.time() - path.stat().st_mtime > 3:
-                    raise ValueError()
-                live = json.loads(path.read_text())
-                if live.get("project") != snapshot.get("project"):
-                    raise ValueError()
-                if live.get("recording") is not False:
-                    raise ValueError()
-                if opened_fx and live.get("opened_fx") != opened_fx.get("guid"):
-                    raise ValueError()
-                if first and live.get("revision") != snapshot.get("revision"):
-                    raise ValueError()
-            except (OSError, ValueError):
-                raise vision.VisualStopped("REAPER changed project, started recording, or is no longer responding. Send the command again.") from None
+            self.check_project(snapshot, first, opened_fx)
             first = False
         def progress(message):
             with self.output_lock:
@@ -173,7 +201,8 @@ class Worker:
         try:
             from .ui_memory import UIMemory
             memory = UIMemory(self.directory.parent / "ui-memory.json") if config.get("ui_memory_enabled", True) else None
-            return vision.run(text, history, config, self.get_desktop(), self.cancel_visual, guard, progress, opened_fx=opened_fx, memory=memory)
+            return vision.run(text, history, config, self.get_desktop(), self.cancel_visual, guard, progress,
+                              opened_fx=opened_fx, memory=memory, **credentials)
         finally:
             self.visual_active = False
 
@@ -189,6 +218,131 @@ class Worker:
         if self.visual_active and self.desktop and self.desktop.escape_pressed():
             self.cancel_visual.set()
 
+    def chatgpt_status(self):
+        try:
+            from .chatgpt_auth import account_status
+            status = account_status(self.directory.parent)
+        except Exception:
+            return "unavailable"
+        if status == "Signed in":
+            return "signed_in"
+        if status == "Signed out":
+            return "signed_out"
+        if status == "Signed in (ChatGPT plan usage not enabled)":
+            return "usage_disabled"
+        return "unavailable"
+
+    def chatgpt_token(self):
+        try:
+            from .chatgpt_auth import access_token
+            return access_token(self.directory.parent)
+        except Exception:
+            return None  # Native plans can still run; the model requires a credential.
+
+    def chatgpt_credentials(self, config):
+        return {"access_token": self.chatgpt_token()} if config.get("fallback_provider") == "chatgpt" else {}
+
+    def mcp_request(self, text, snapshot, config, history, deadline, job_id):
+        from .mcp_catalog import WRITES
+        from .mcp_companion import WRITES as COMPANION_WRITES
+        from .mcp_ipc import exchange
+        from .mcp_loop import run_loop
+        from .mcp_responses import make_turn
+        from .reaper_mcp_client import ReaperMCPClient
+
+        def remaining():
+            return deadline - time.monotonic()
+
+        edited = False
+        def check():
+            if self.active_id != job_id or self.cancel_visual.is_set() or self.shutdown:
+                raise PlanError('Request cancelled. Check REAPER before retrying.')
+            if remaining() <= 0:
+                raise PlanError('Request timed out. Check REAPER before retrying.')
+            if self.recorder.stream:
+                raise PlanError('Stop microphone recording before using ReaperMCP.')
+            self.check_project(snapshot, not edited, job_id=job_id)
+
+        check()
+        credentials = self.chatgpt_credentials(config)
+        provider, _, model = service_config(config, 'fallback')
+        if provider == 'chatgpt' and not credentials.get('access_token'):
+            raise PlanError('Sign in with ChatGPT in Settings first.')
+        if provider != 'chatgpt' and not providers.api_key(provider):
+            raise PlanError('Add your API key in Settings first.')
+        turn = make_turn(config, check, **credentials)
+        context = {'history': history[-16:], 'preferences': config.get('aliases', '')}
+        try:
+            check()
+            with ReaperMCPClient(settings.reaper_mcp_command(), check) as client:
+                class GuardedClient:
+                    list_tools = staticmethod(client.list_tools)
+
+                    @staticmethod
+                    def call(name, args):
+                        nonlocal edited
+                        check()
+                        # Our first write can itself advance the panel revision.
+                        if name in WRITES:
+                            edited = True
+                        return client.call(name, args)
+
+                def companion(request, budget, seconds):
+                    def publish(path, value):
+                        nonlocal edited
+                        with self.output_lock:
+                            check()
+                            if not edited:
+                                value['revision'] = snapshot['revision']
+                            if request['name'] in COMPANION_WRITES:
+                                edited = True
+                            atomic_json(path, value)
+                    return exchange(self.directory, job_id, snapshot['project'], request, budget, seconds, publish)
+
+                message = run_loop(GuardedClient(), turn, text, context, check, remaining, companion=companion)
+            check()
+        except PlanError:
+            raise  # Keep the loop's verified/uncertain edit receipts.
+        except RuntimeError as exc:
+            raise PlanError(str(exc)) from exc  # Includes bridge setup guidance.
+        except Exception as exc:
+            raise PlanError('ReaperMCP request failed. Check REAPER before retrying.') from exc
+        return {'kind': 'reply', 'message': message, 'model': model}
+
+    def chatgpt_models(self):
+        result = {"kind": "chatgpt_models", "models": []}
+        token = self.chatgpt_token()
+        if not token:
+            return dict(result, message="Sign in with ChatGPT in Settings before refreshing models.")
+        try:
+            models = providers.chatgpt_list_models(token)
+            result["models"] = [{"slug": m["slug"], "display_name": m["display_name"]} for m in models
+                                if len(m["slug"]) <= 200 and len(m["display_name"]) <= 200
+                                and token not in m["slug"] and token not in m["display_name"]]
+        except Exception:
+            result["message"] = "Could not refresh ChatGPT models. Check your sign-in and try again."
+        return result
+
+    def chatgpt_account(self, kind):
+        result = {"kind": "chatgpt_account"}
+        if kind != "chatgpt_status":
+            if self.recorder.stream:
+                raise PlanError("Stop recording before changing the ChatGPT account.")
+            try:
+                if kind == "chatgpt_sign_in":
+                    from .chatgpt_auth import sign_in
+                    sign_in(self.directory.parent)
+                else:
+                    from .chatgpt_auth import sign_out
+                    if sign_out(self.directory.parent) == "Signed out locally; remote revocation was not confirmed. Disconnect the app in ChatGPT Settings.":
+                        result["message"] = "Signed out locally. To confirm revocation, disconnect HeyComputer in ChatGPT Settings."
+            except Exception:
+                # OAuth errors may contain codes or tokens; never relay their text.
+                verb = "sign in to" if kind == "chatgpt_sign_in" else "sign out of"
+                result["message"] = f"Could not {verb} ChatGPT. Try again in Settings."
+        result["status"] = self.chatgpt_status()
+        return result
+
     def settings(self):
         error = ""
         try:
@@ -203,13 +357,23 @@ class Worker:
             voice_error = 'Voice/output discovery unavailable. Refresh audio devices to try again.'
         return {"kind": "settings", "config": self.config, "devices": devices, "presets": PRESETS,
                 "outputs": outputs, "voices": voices, "voice_error": voice_error,
-                "keys": {p: bool(providers.api_key(p)) for p in KEY_PROVIDERS},
-                "audio_error": error, "remote": self.remote.info(), "wake": self.wake_info(),
+                "keys": {p: bool(providers.api_key(p)) for p in KEY_PROVIDERS}, "chatgpt_status": self.chatgpt_status(),
+                "audio_error": error, "wake": self.wake_info(),
                 "vision": self.visual_status() if self.config.get("vision_enabled") else {}}
 
     def save_settings(self, job):
         config = dict(self.config)
-        config.update({k: v for k, v in job.get("config", {}).items() if k in DEFAULTS})
+        updates = job.get("config", {})
+        config.update({k: v for k, v in updates.items() if k in DEFAULTS})
+        if config["fallback_provider"] == "chatgpt":
+            if self.config["fallback_provider"] != "chatgpt" and "fallback_model" not in updates:
+                config["fallback_model"] = PRESETS["fallback"]["chatgpt"]["model"]
+            config["fallback_endpoint"] = PRESETS["fallback"]["chatgpt"]["endpoint"]
+        if config["transcription_provider"] == "mlx_whisper":
+            preset = PRESETS["transcription"]["mlx_whisper"]
+            if self.config["transcription_provider"] != "mlx_whisper" and "transcription_model" not in updates:
+                config["transcription_model"] = preset["model"]
+            config["transcription_endpoint"] = preset["endpoint"]
         for service in PRESETS:
             service_config(config, service)
         if type(config["mic_channel"]) is not int or not 1 <= config["mic_channel"] <= 256:
@@ -219,10 +383,8 @@ class Worker:
         correction_pairs(config["speech_corrections"])
         phrases(config)
         validate_voice(config)
-        if any(type(config[k]) is not bool for k in ("use_jev", "allow_lua", "remote_enabled", "vision_enabled", "ui_memory_enabled")):
+        if any(type(config[k]) is not bool for k in ("use_jev", "allow_lua", "vision_enabled", "ui_memory_enabled")):
             raise PlanError("Invalid settings.")
-        if type(config["remote_port"]) is not int or not 1024 <= config["remote_port"] <= 65535:
-            raise PlanError("Remote port must be between 1024 and 65535.")
         for provider in KEY_PROVIDERS:
             value = job.get("keys", {}).get(provider, "").strip()
             if value:
@@ -234,7 +396,6 @@ class Worker:
         if not config["vision_enabled"] and self.desktop:
             self.desktop.allowed_hosts.clear()
             self.desktop.clear()
-        self.remote.configure(config["remote_enabled"], config["remote_port"])
         self.configure_wake()
         return self.settings()
 
@@ -275,6 +436,7 @@ class Worker:
         self.active_id = job_id
         self.cancel_visual.clear()
         config = dict(self.config)
+        deadline = time.monotonic() + MCP_REQUEST_SECONDS
         preparation = self.visual_preparation
         parameter_preparation = self.parameter_preparation
         activation = self.voice_activation if kind == "record_stop" else ""
@@ -309,7 +471,7 @@ class Worker:
                 snapshot = job.get("snapshot", {})
                 if snapshot.get("project") != prep["project"] or not isinstance(snapshot.get("fx_parameters"), list) or len(snapshot["fx_parameters"]) != 1:
                     raise PlanError("The inspected project or plugin changed.")
-                result = providers.openai_plan(prep["text"], snapshot, config, [])
+                result = providers.openai_plan(prep["text"], snapshot, config, [], **self.chatgpt_credentials(config))
                 result["model"] = prep.get("model")
                 return route_result(result, prep["text"], snapshot, [])
             if kind == "visual_continue":
@@ -329,6 +491,10 @@ class Worker:
                 return dict(self.settings(), kind="audio_devices")
             if kind == "save_settings":
                 return self.save_settings(job)
+            if kind in ("chatgpt_status", "chatgpt_sign_in", "chatgpt_sign_out"):
+                return self.chatgpt_account(kind)
+            if kind == "chatgpt_models":
+                return self.chatgpt_models()
             if kind in ("wake_log", "wake_log_clear"):
                 if kind == "wake_log_clear":
                     self.wake_log.clear()
@@ -341,16 +507,11 @@ class Worker:
                         raise PlanError("Invalid plugin-window selection.")
                     self.get_desktop().approve_host(job["window"], job["enabled"])
                 return {"kind": "visual_status", "vision": self.visual_status(kind == "visual_permissions")}
-            if kind == "remote_pair":
-                return self.remote.begin_pairing()
-            if kind == "remote_revoke":
-                self.remote.revoke()
-                return self.settings()
             if kind == "record_start":
                 self.recorder.start(config)
                 self.voice_activation = job.get("wake_event") or self.recorder.record_id
                 self.log_voice(self.voice_activation, "recording_started",
-                               source="wake word" if job.get("wake_event") else "Talk button / action / remote")
+                               source="wake word" if job.get("wake_event") else "Talk button / action")
                 return {"kind": "recording", "record_id": self.recorder.record_id}
             if kind == "record_cancel":
                 self.recorder.stop(discard=True)
@@ -361,15 +522,28 @@ class Worker:
                 snapshot, history = job.get("snapshot", {}), job.get("history", [])
                 text = job.get("text", "").strip()
                 if kind == "record_stop":
+                    def cancelled():
+                        self.log_voice(activation, "cancelled", reason="Transcription request cancelled.")
+                        return {"kind": "reply", "message": "Request cancelled before execution."}
+
                     spoken_stop = (job.get("stop_phrase") == config["wake_stop_phrase"]
                                    and job.get("record_id") == self.recorder.record_id)
-                    wav = self.recorder.stop()
+                    wav = self.recorder.stop(discard=True) if self.cancel_visual.is_set() else self.recorder.stop()
+                    if self.cancel_visual.is_set():
+                        return cancelled()
                     self.log_voice(activation, "submitted", source="stop phrase" if spoken_stop else "Stop & send")
                     vocabulary = [i["name"] for i in snapshot.get("inputs", [])]
                     vocabulary += re_words(config.get("aliases", ""))
                     vocabulary += [p["name"] for p in snapshot.get("plugins", [])
                                    if any(term in p["name"].lower() for term in ("genome", "fabfilter"))]
-                    text = providers.transcribe(wav, config, vocabulary)
+                    try:
+                        text = providers.transcribe(wav, config, vocabulary)
+                    except PlanError:
+                        if self.cancel_visual.is_set():
+                            return cancelled()
+                        raise
+                    if self.cancel_visual.is_set():
+                        return cancelled()
                     if spoken_stop:
                         text = strip_stop_phrase(text, config["wake_stop_phrase"])
                     self.log_voice(activation, "transcribed", transcript=text)
@@ -385,7 +559,21 @@ class Worker:
                     text = correct_text(text, config)
                 if not text or len(text) > 12000:
                     raise PlanError("Enter a command shorter than 12,000 characters.")
-                result = providers.plan(raw_text, snapshot, config, history)
+                if config.get('reaper_mcp_enabled') is True:
+                    # quick_plan accepts the WHOLE corrected utterance, never a
+                    # single step split out of a compound request.
+                    direct = providers.quick_plan(text, snapshot)
+                    awaiting = bool(history and history[-1].get('kind') in ('reply', 'lua'))
+                    if direct and (not awaiting or direct['actions'][0]['op'] in ('transport', 'launch_action')):
+                        result = route_result(validate_result(direct, snapshot), text, snapshot, history)
+                        return dict(result, transcript=text)
+                    if (not awaiting and mcp_intent(text)
+                            and snapshot.get('fx_parameters') is None):
+                        result = self.mcp_request(text, snapshot, config, history, deadline, job_id)
+                        # Already executed; never turn an uncertain write into
+                        # a legacy plan or a 'cancelled before execution' reply.
+                        return dict(result, transcript=text)
+                result = providers.plan(raw_text, snapshot, config, history, **self.chatgpt_credentials(config))
                 result = route_result(result, text, snapshot, history)
                 result["transcript"] = text
                 return result
@@ -401,7 +589,6 @@ class Worker:
             prepare_window_server()
         except ImportError:
             pass  # Native/audio commands still work before optional libs exist.
-        self.remote.configure(self.config.get("remote_enabled") is True, self.config.get("remote_port", 8765))
         self.configure_wake()
         atomic_json(self.directory / "ready.json", {"pid": os.getpid(), "version": "0.1.0"})
         timed_out = False
@@ -432,7 +619,6 @@ class Worker:
             self.cancel_visual.set()
             self.shutdown = True
             self.speaker.stop()
-            self.remote.stop()
             with self.wake_lock:
                 if self.wake:
                     self.wake.close()
@@ -440,9 +626,9 @@ class Worker:
                 self.log_voice(self.voice_activation, "cancelled", reason="Panel closed; audio discarded.")
             self.recorder.close()
             with self.output_lock:
-                for pattern in ("*.request.json", "*.response.json", "*.tmp",
+                for pattern in ("*.request.json", "*.response.json", "*.tmp", "*.companion-call.json", "*.companion-reply.json",
                                 "ready.json", "meter.json", "transcript.json", "heartbeat",
-                                "remote-state.json", "remote-command.json", "visual-guard.json",
+                                "visual-guard.json",
                                 "visual-cancel.json", "visual-progress.json", "test-state.json",
                                 "test-command.json", "test-rejected.json", "test-command.lock",
                                 "wake-state.json", "wake-event.json", "speech-state.json", "speech-command.json"):

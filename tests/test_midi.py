@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from heycomputer.protocol import action, validate_result, PlanError
 from heycomputer import providers
-from heycomputer.settings import DEFAULTS
+from routing_fixture import OPENROUTER_DEFAULTS as DEFAULTS
 
 
 def op(name, target, value):

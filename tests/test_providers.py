@@ -10,7 +10,8 @@ from unittest.mock import patch
 
 from heycomputer import providers
 from heycomputer.protocol import PlanError
-from heycomputer.settings import DEFAULTS, PRESETS, load_config, service_config
+from heycomputer.settings import PRESETS, load_config, service_config
+from routing_fixture import OPENROUTER_DEFAULTS as DEFAULTS
 from heycomputer.worker import Worker, Recorder
 
 
@@ -154,7 +155,7 @@ class SettingsTests(unittest.TestCase):
             worker = Worker(Path(folder) / "session")
             for endpoint in endpoints:
                 with self.subTest(endpoint=endpoint), self.assertRaises(PlanError):
-                    worker.save_settings({"config": {"fallback_endpoint": endpoint}, "keys": {"openrouter": "fixture"}})
+                    worker.save_settings({"config": {"fallback_provider": "openrouter", "fallback_endpoint": endpoint}, "keys": {"openrouter": "fixture"}})
             key.assert_not_called()
             self.assertFalse(worker.config_path.exists())
 

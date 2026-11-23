@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from heycomputer.protocol import PlanError, action, validate_result
+from routing_fixture import OPENROUTER_DEFAULTS
 from heycomputer import providers
 
 SNAPSHOT = {
@@ -92,7 +93,7 @@ class Plans(unittest.TestCase):
     def test_clarification_preserves_conversation(self, jev, fallback, key):
         fallback.return_value = {"kind": "reply", "message": "Which track?"}
         history = [{"role": "assistant", "text": "Which Pro-Q version?", "kind": "reply"}]
-        providers.plan("Version 4", SNAPSHOT, {}, history)
+        providers.plan("Version 4", SNAPSHOT, OPENROUTER_DEFAULTS, history)
         jev.assert_not_called()
         self.assertEqual(fallback.call_args.args[-1], history)
 
@@ -101,7 +102,7 @@ class Plans(unittest.TestCase):
     def test_incomplete_openai_output_cannot_execute(self, request, key):
         request.return_value = {"status": "incomplete", "output": []}
         with self.assertRaises(PlanError):
-            providers.openai_plan("Create tracks", SNAPSHOT, {}, [])
+            providers.openai_plan("Create tracks", SNAPSHOT, OPENROUTER_DEFAULTS, [])
 
 
 if __name__ == "__main__":

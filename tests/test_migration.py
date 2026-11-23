@@ -11,14 +11,13 @@ from heycomputer.worker import Worker
 
 
 class RenameTests(unittest.TestCase):
-    def test_imports_settings_pairing_and_memory_without_replaying_requests(self):
+    def test_imports_settings_and_memory_without_replaying_requests(self):
         with tempfile.TemporaryDirectory() as folder:
             legacy, current = (Path(folder) / name for name in ("ReaJev", "HeyComputer"))
             legacy.mkdir()
             saved = {"mic_device": "Core Audio: Guitar 1", "mic_channel": 2,
                      "speech_corrections": "ree splice = ReaSplice"}
-            files = {"settings.json": saved, "remote-token.json": {"token": "a" * 64},
-                     "ui-memory.json": {"notes": ["fixture"]}}
+            files = {"settings.json": saved, "ui-memory.json": {"notes": ["fixture"]}}
             for name, value in files.items():
                 (legacy / name).write_text(json.dumps(value))
             (legacy / "old-session").mkdir()
@@ -27,7 +26,6 @@ class RenameTests(unittest.TestCase):
             self.assertEqual(worker.config["mic_device"], saved["mic_device"])
             self.assertEqual(worker.config["mic_channel"], 2)
             self.assertEqual(worker.config["speech_corrections"], saved["speech_corrections"])
-            self.assertEqual(worker.remote.token, "a" * 64)
             for name, value in files.items():
                 self.assertEqual(json.loads((current / name).read_text()), value)
                 self.assertEqual(json.loads((legacy / name).read_text()), value)

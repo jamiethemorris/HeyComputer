@@ -16,7 +16,6 @@ from heycomputer.worker import Worker, Recorder, atomic_json
 class WorkerTests(unittest.TestCase):
     def run_without_devices(self, worker):
         with patch.dict(sys.modules, {'heycomputer.vision_macos': SimpleNamespace(prepare_window_server=lambda: None)}), \
-             patch.object(worker.remote, 'configure'), patch.object(worker.remote, 'stop'), \
              patch.object(worker, 'configure_wake'), patch.object(worker.recorder, 'close'), \
              patch('heycomputer.worker.time.sleep'):
             worker.run()

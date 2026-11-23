@@ -10,7 +10,7 @@ def import_legacy_settings(directory: Path) -> None:
     legacy = directory.with_name("ReaJev")
     # Leave originals intact. Existing HeyComputer settings always win, and
     # session requests/recordings must never be replayed after the rename.
-    for name in ("settings.json", "remote-token.json", "ui-memory.json"):
+    for name in ("settings.json", "ui-memory.json"):
         source, target = legacy / name, directory / name
         if target.exists() or not source.is_file():
             continue

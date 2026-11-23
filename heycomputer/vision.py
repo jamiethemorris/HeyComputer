@@ -1,11 +1,13 @@
 """Bounded, opt-in visual fallback. Images never enter IPC, history, or files."""
 import base64
 from dataclasses import dataclass, field
+from functools import partial
 import json
 import math
 import time
 
 from .protocol import PlanError
+from . import chatgpt_responses
 
 
 class VisualStopped(PlanError):
@@ -120,7 +122,7 @@ When ui_memory.learning is true, memory may contain up to 3 concise reusable fac
 """
 
 
-def next_step(text, history, config, frame, windows, log):
+def next_step(text, history, config, frame, windows, log, *, access_token = None):
     from . import providers
     from .settings import service_config
     provider, endpoint, model = service_config(config, "fallback")
@@ -129,7 +131,7 @@ def next_step(text, history, config, frame, windows, log):
                "allowed_windows": [w.public() for w in windows], "controls": frame.controls,
                "ui_memory": frame.ui_memory,
                "actions_so_far": log, "supported_keys": sorted(set(KEYS) | CHORDS)}
-    response = providers.request_json(endpoint, providers.api_key(provider), {
+    payload = {
         "model": model, "store": False, "instructions": INSTRUCTIONS,
         "reasoning": {"effort": "low"}, "max_output_tokens": 1400,
         "input": [{"role": "user", "content": [
@@ -137,21 +139,30 @@ def next_step(text, history, config, frame, windows, log):
             {"type": "input_image", "detail": "high", "image_url": "data:image/jpeg;base64," + base64.b64encode(frame.jpeg).decode("ascii")},
         ]}],
         "text": {"format": {"type": "json_schema", "name": "heycomputer_visual_step", "strict": True, "schema": SCHEMA}},
-    })
+    }
+    response = providers.fallback_response(provider, endpoint, payload, access_token)
     if response.get("status") != "completed":
         raise PlanError("The visual model did not finish its response.")
     parts = [p.get("text", "") for item in response.get("output", []) if item.get("type") == "message"
              for p in item.get("content", []) if p.get("type") == "output_text"]
     try:
-        return json.loads("".join(parts))
+        result = json.loads("".join(parts))
     except (ValueError, TypeError):
         raise PlanError("The model did not return a usable visual action.") from None
+    if provider == "chatgpt":
+        chatgpt_responses.reject_reflected_token(result, access_token)
+    return result
 
 
-def run(text, history, config, backend, cancelled, guard, progress, ask=next_step, opened_fx=None, memory=None):
+def run(text, history, config, backend, cancelled, guard, progress, ask=next_step, opened_fx=None, memory=None,
+        *, access_token = None):
     """No automatic rollback: GUIs and plugin undo stacks are not transactional."""
     if config.get("vision_enabled") is not True:
         raise PlanError("Enable REAPER-only visual control in Settings first.")
+    if ask is next_step:
+        if config.get("fallback_provider") == "chatgpt":
+            chatgpt_responses.require_token(access_token)
+        ask = partial(next_step, **{"access_token": access_token})
     started, log, changed = time.monotonic(), [], False
     deadline = started + 180
     from .ui_memory import scope_for, observations

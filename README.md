@@ -19,8 +19,7 @@ work and has its own license. HeyComputer is not affiliated with or endorsed by 
 - Write track, send-volume and plugin automation points, ramps, fades, and repeating patterns.
 - Create MIDI items and patterns; edit, transpose, quantize, or delete MIDI notes.
 - Launch installed REAPER actions and scripts by name.
-- Optionally use REAPER-window vision for controls that need the interface, or
-  control the Mac microphone from the experimental iPhone/Apple Watch remote.
+- Optionally use REAPER-window vision for controls that need the interface.
 
 The panel adapts to a side or bottom docker and follows REAPER's theme. It supports
 typed commands, push-to-talk, and optional local “Hey computer” wake-word detection.
@@ -46,11 +45,13 @@ sh scripts/setup.sh
    it does not change REAPER’s audio configuration.
 2. In REAPER, open **Actions → Show action list → New action → Load ReaScript**.
    Select `reaper/HeyComputer.lua`, then run it.
-3. In **Settings**, choose **Use OpenRouter for all**, enter your **OpenRouter key**
-   once, and click **Save all settings**. That key covers Jev, conversational fallback,
-   and transcription. Keys are stored in macOS Keychain under the service `HeyComputer`.
-   `OPENROUTER_API_KEY` overrides the saved key when inherited by REAPER. API use
-   is billed separately from chat subscriptions.
+3. In **Settings → Account and model**, click **Sign in** to use your ChatGPT plan for
+   conversation (the default for new installs; Jev is off). Transcription defaults to
+   OpenRouter: under **Account and model → Other providers** enter an **OpenRouter key**
+   (stored in macOS Keychain under the service `HeyComputer`; `OPENROUTER_API_KEY`
+   overrides it when inherited by REAPER), or choose **MLX Whisper (local)** under
+   **Voice input** to need no key. Click **Save all settings**. API use is billed
+   separately from chat subscriptions.
 4. Select a microphone device and its **one-based input channel**, then save.
    This device is independent of REAPER’s track recording input. macOS may ask
    for microphone access when recording starts.
@@ -67,19 +68,33 @@ keyboard shortcuts and toolbar buttons continue to work. Use the new
 keep a `ReaJev` folder alias pointing to `HeyComputer` for previously registered
 paths and the existing Python environment.
 
-The first launch imports settings, microphone selection, UI memory, and remote
-pairing from `Data/ReaJev` into `Data/HeyComputer` without replacing existing
+The first launch imports settings, microphone selection and UI memory
+from `Data/ReaJev` into `Data/HeyComputer` without replacing existing
 HeyComputer data or replaying old requests. Saved API keys under the old Keychain
 service remain readable; newly saved keys use `HeyComputer`. The dock position
-is preserved. Phone/Watch display names, source folders and build targets use
-HeyComputer; their existing bundle IDs and pairing Keychain identifier stay unchanged so updates preserve installed apps
-and pairings. New QR codes use `heycomputer://`; the mobile app also accepts
-older `jev://` pairing codes.
+is preserved.
 
 ## API connections
 
-Each service has an editable **provider**, **model ID**, and **endpoint URL** in
-Settings. Enter the complete request URL, including its path (not just a base
+**To use your ChatGPT plan:** If you’re updating an existing installation, rerun `sh scripts/setup.sh` first to install the sign-in dependency, then reopen the panel. New installs already select ChatGPT for conversation; existing installs can choose it under **Other providers** (or **Use my ChatGPT account**). Click **Sign in**, approve plan usage in your browser, wait for the model list (or click **Refresh models**), choose a model, and **Save all settings**. This also selects the provider for optional REAPER-only visual control. Jev and speech transcription keep their own provider settings and may still incur charges. Wake and stop words are detected locally, as before.
+
+The ChatGPT endpoint is fixed. The helper stores its credentials in an owner-only file under REAPER’s `Data/HeyComputer`, separate from settings and session history. Use **Sign out** to clear the local tokens; if revocation cannot be confirmed, disconnect the app in ChatGPT Settings as well.
+
+**To transcribe Talk locally on Apple Silicon:** After normal setup, run
+`.venv/bin/python -m pip install -e '.[local-speech]'` from the HeyComputer folder.
+Reopen the panel, choose **MLX Whisper (local)** under **Settings → Voice input → Transcription**,
+and click **Save all settings**. The default English model is
+`mlx-community/whisper-base.en-mlx`. You can change the Model ID to another MLX
+Whisper checkpoint. The model may download on the first submitted recording;
+the recording stays in memory on your Mac. There is no transcription API key,
+per-minute fee, or automatic cloud fallback. If you also want to avoid API keys
+for planning, disable Jev and select **ChatGPT** for conversation/fallback.
+Local transcription does not make the conversation provider local.
+
+Settings are grouped into collapsible sections: **Account and model** (open by default),
+**Voice input**, **Spoken replies**, **REAPER control** and **Vocabulary**. For API-key
+connections, each service has an editable **provider**, **model ID**, and **endpoint URL**;
+the provider choice, keys and endpoints live under **Account and model → Other providers**. Enter the complete request URL, including its path (not just a base
 URL). The bundled OpenRouter defaults are:
 
 | Service | Model ID | Endpoint URL |
@@ -100,8 +115,9 @@ Changing a service's provider restores its endpoint/model defaults and selects
 that provider's saved key. Each provider has one shared key; mixed setups can use
 OpenRouter for commands and direct OpenAI for voice, for example. Direct keys can
 also come from `TYPESAFE_API_KEY` / `OPENAI_API_KEY`. Blank key fields keep saved
-keys. Existing installations retain their direct-provider settings until you
-choose **Use OpenRouter for all** and save.
+keys. New installs use ChatGPT for conversation with Jev off. Existing installations
+retain their saved provider settings until you change them (for example with
+**Use OpenRouter for all**) and save.
 
 Custom endpoints must implement the same request/response contract: System One
 or Decisions for Jev, Responses for GPT, and audio/transcriptions for voice.
@@ -159,7 +175,7 @@ Choose a voice, audio output device, and mono channel or stereo output pair. The
 separate **Voice volume** starts at **20%** and ranges from mute to 100%; it does
 not change REAPER's mix or macOS volume. **Test voice** previews unsaved output
 choices, and **Stop voice** interrupts playback. **Save all settings**, at the
-bottom of Settings, applies all sections; refreshing audio devices preserves
+bottom of Settings (always visible), applies all sections; refreshing audio devices preserves
 unsaved choices. Speech starts disabled on existing and new installations.
 
 Wake detection pauses during synthesis/playback and briefly afterward to avoid
@@ -186,12 +202,12 @@ Only about 5.5 MB of model files are retained under REAPER's
 For a portable/nonstandard resource folder, pass `--runtime /path/to/Data/HeyComputer`.
 Reopen the panel after installation.
 
-In **Settings → Local wake & stop words**, enable **Listen for a wake word** and
+In **Settings → Voice input → Wake & stop words**, enable **Listen for a wake word** and
 save. The defaults are **hey computer** to start Talk and **execute** to stop and
 send. Both phrases are editable (English, up to six words); use a stop phrase you
 will not normally say inside a command, such as “send it.” Wait for **Listening…**
 after waking, then speak your command. The stop phrase also works for recordings
-started with Talk, a shortcut, or the remote. A detected stop phrase is removed
+started with Talk or a shortcut. A detected stop phrase is removed
 from the end of the transcript before command interpretation. The buttons still
 work normally.
 
@@ -252,7 +268,7 @@ Repeated presses during startup do not open duplicate panels. Send is disabled
 during recording; Talk stops and sends that recording instead.
 
 The Talk toolbar button follows the confirmed microphone recording state,
-including recordings started by the wake phrase, panel or remote. Existing
+including recordings started by the wake phrase or panel. Existing
 ReaJev Talk buttons are discovered when the panel opens, so they also light up
 without being clicked first. Stopping, cancelling or closing the panel clears
 the indicator.
@@ -443,25 +459,6 @@ even when its internal controls are drawn graphically. Some plugins won't expose
 enough window information. ReaSplice search/download/import is not yet verified
 and cross-window sample dragging is not implemented.
 
-### iPhone and Apple Watch remote (prototype)
-
-The **HeyComputerPhone** scheme in `watch/HeyComputerWatch.xcodeproj` builds the iPhone app
-and its embedded Watch companion. In HeyComputer settings, enable remote control, save,
-then choose **Pair iPhone**. Scan the QR code in the iPhone app and confirm the Mac
-address. Pairing also enables the Watch controls; no address or code entry on the
-Watch is needed. The phone keeps the credential in Keychain and relays the
-Watch’s live requests to the Mac using WatchConnectivity.
-
-Both apps provide **Talk**, **Stop & send**, **Cancel**, and HeyComputer’s status/replies
-using the Mac’s selected microphone. Keep the iPhone nearby on the Mac’s Wi-Fi,
-and REAPER and HeyComputer running on an awake Mac. Watch microphone recording is not
-implemented yet. The connection to the Mac uses unencrypted local HTTP on trusted
-Wi-Fi. Pairing is single-use and expires after five minutes; microphone commands
-expire and are never queued for offline delivery or automatically retried.
-See [iPhone and Watch setup](watch/README.md) for build, installation, and protocol
-details.
-
-
 ## Models and execution
 
 - **Jev** handles a bounded recipe for creation, optional folder, shared pan,
@@ -507,6 +504,14 @@ latest project. Stop remains usable when recording changes the project. Failures
 during restoration are reported. Transport and saving run last, outside the edit
 transaction. If that final step fails, completed edits remain and the result says
 so; saving a file and recording audio cannot be rolled back as ordinary edits.
+
+### Optional multi-step execution with ReaperMCP
+
+In a disposable project, load and run the matching ReaperMCP 0.8.3 `reaper_mcp_server.lua` in REAPER's Actions list. In HeyComputer Settings, select **Enable REAPER MCP tools** and **Save all settings**. The switch defaults off. The helper starts a local stdio process for each MCP request using `uvx --python 3.13 xdarkzx-reaper-mcp==0.8.3` (the first run may download the package). Make `uvx` available to the helper, or set `HEYCOMPUTER_REAPER_MCP_COMMAND` in its local environment to use an absolute executable path. Neither the panel nor a model request can set this command. On macOS the helper aligns the child process’s temporary directory with `getconf DARWIN_USER_TEMP_DIR` so the server can find the Lua bridge.
+
+Try: “Create a return named Short Room, copy the reverb from Vocals to it, set the copy’s decay to 800 ms, send Vocals to it at −6 dB, and automate the send to −12 dB at bar 5.” Use a project with one unambiguous reverb on Vocals. The selected conversation provider receives the request, bounded project context and tool results, not idle microphone audio. Standalone quick commands still bypass the model. For nonlinear parameters the panel uses the plug-in’s displayed units rather than guessing a normalized setting.
+
+Requests stop after 28 model turns, 8 edit calls, or a 120-second budget. Keep the same project active and avoid simultaneous edits. Recording or unknown recording state blocks edits. Cancel stops further steps; it does **not** roll back edits already sent. Check REAPER before retrying a partial result. A compound request can leave multiple undo entries: 0.8.3 groups certain built-in operations, but `project_undo_group` **undoes** a group rather than opening one. HeyComputer does not call it automatically. Disable the switch and save to return to the existing planner.
 
 ## Common commands
 
@@ -883,9 +888,9 @@ pro cue = Pro-Q 4
 
 Corrections match whole phrases, ignore case, prefer longer phrases and apply once
 without cascading into other corrections. They run locally after transcription,
-before the corrected transcript appears or the command is interpreted, on either
-transcription provider. They also apply to typed commands. On the direct OpenAI
-transcription route, canonical terms are additionally included as vocabulary hints.
+before the corrected transcript appears or the command is interpreted, on every
+transcription route. They also apply to typed commands. Direct OpenAI and local
+MLX Whisper additionally receive canonical terms as vocabulary hints.
 **Term definitions & preferences** is the existing preferences field: use it for
 meaning and choices, such as “ReaSplice is my sample-browser script” or preferred
 plugin formats. These preferences are passed to the command model.
@@ -903,10 +908,14 @@ matching names require clarification. A receipt confirms action dispatch, not
 completion of a deferred script or verification of its window.
 
 Transcription presets: `gpt-transcribe` (default), `gpt-4o-mini-transcribe`, and
-`whisper-1`, with an `openai/` prefix on OpenRouter. Audio is sent to the configured
-transcription endpoint only after **Stop & send** or a detected stop phrase while
-Talk is recording. Silence detection
-avoids submitting empty recordings. Transcripts, relevant track metadata,
+`whisper-1`, with an `openai/` prefix on OpenRouter. Only Talk audio submitted with
+**Stop & send** or a detected stop phrase reaches the selected transcription
+provider. Wake and stop-word detection always uses local `sherpa-onnx`; no idle
+audio goes to a transcription provider. Silence detection avoids submitting empty
+recordings. **Cancel recording** discards audio before submission. If you cancel a
+submitted request during MLX transcription, the helper discards the result without
+planning a command when the in-progress inference or model download returns.
+Transcripts, relevant track metadata,
 installed plugin names, tempo/meter/grid and timeline/item/marker/send metadata,
 bounded MIDI note previews (pitch, timing, velocity, channel and selection),
 track/option states, project filename,
@@ -914,8 +923,7 @@ relevant action/script names and preferences are sent to the selected command se
 OpenRouter routes requests to the serving model providers. One OpenRouter key
 supports all three services. A direct OpenAI key alone works with Jev disabled;
 a direct TypeSafe key alone supports the routine recipe but cannot provide
-speech transcription or conversational fallback. Vocabulary hints are currently
-sent only on the direct OpenAI transcription route.
+speech transcription or conversational fallback.
 
 A local Python helper handles audio and HTTPS outside REAPER’s UI thread. Private
 IPC/config files live in `Data/HeyComputer` under REAPER’s resource directory, not the
@@ -925,8 +933,6 @@ over 20 seconds, the helper stops and discards queued requests and audio. When t
 panel resumes, it shows **Helper disconnected** instead of failing on a missing
 session folder. Close and reopen HeyComputer to reconnect. Completed edits and
 their receipts remain; interrupted commands are never retried automatically.
-`remote-state.json` is a local status file for the optional remote controls, not a
-REAPER dependency or an upload.
 API keys are never included in model requests as project data, displayed after
 saving, or written to settings/logs. The short-lived key-save IPC request is
 removed before processing and resides in a directory accessible only to the user.
@@ -947,15 +953,13 @@ find reaper scripts tests -name '*.lua' -exec luac -p {} \;
 
 The Python suite includes local loopback-server tests, so allow local networking
 when running it in a sandbox. These automated suites use fixtures and mocks;
-they do not call paid model APIs or record microphone audio. See
-[the remote README](watch/README.md#verification) for Swift checks and the unsigned
-iPhone/Watch build. Live REAPER scripts under `scripts/` are separate, opt-in
+they do not call paid model APIs or record microphone audio. Live REAPER scripts under `scripts/` are separate, opt-in
 checks; use a disposable test project and read each script's prerequisites first.
 
 Source lives in `heycomputer/` (Python helper), `reaper/` (panel and native
-executor), and `watch/` (iPhone/Watch apps). `tests/` contains the automated suites.
-Local environments, runtime files, logs, credentials, REAPER projects, and Xcode
-user/signing files are excluded by `.gitignore`. Keep personal configuration in
+executor). `tests/` contains the automated suites.
+Local environments, runtime files, logs, credentials, and REAPER projects
+are excluded by `.gitignore`. Keep personal configuration in
 REAPER's resource directory or macOS Keychain, not in source files.
 
 The tests use mocked providers and a REAPER API fixture. They cover the ten-track

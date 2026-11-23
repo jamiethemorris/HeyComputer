@@ -5,9 +5,9 @@ local function test(name,fn) fn();count=count+1;print('PASS '..name) end
 
 test('missing session directory does not throw or recreate stale work',function()
   local root=os.tmpname();os.remove(root)
-  local called,wrote,err=pcall(Runtime.write,root..'/remote-state.json','{}')
+  local called,wrote,err=pcall(Runtime.write,root..'/test-state.json','{}')
   assert(called and wrote==false and err)
-  assert(not io.open(root..'/remote-state.json','rb'))
+  assert(not io.open(root..'/test-state.json','rb'))
 end)
 
 test('successful writes atomically replace status and remove temporary files',function()

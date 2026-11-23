@@ -4,6 +4,7 @@ import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from routing_fixture import OPENROUTER_DEFAULTS
 from heycomputer.protocol import validate_result, action, PlanError
 from heycomputer.worker import Worker
 
@@ -45,6 +46,7 @@ class ParametersTests(unittest.TestCase):
     def test_inspect_then_plan_is_one_use_and_does_not_call_visual_model(self):
         with tempfile.TemporaryDirectory() as directory:
             worker = Worker(Path(directory)/'session')
+            worker.config.update(OPENROUTER_DEFAULTS)
             preparation = {'kind': 'inspect', 'actions': [action('inspect_fx', 't1', 'fx1')],
                            'message': 'Set 300 Hz exactly; then open this instance', 'lua': '', 'model': 'fixture'}
             with patch('heycomputer.worker.providers.plan', return_value=preparation), \
@@ -75,6 +77,7 @@ class ParametersTests(unittest.TestCase):
             {'type': 'output_text', 'text': json.dumps(preparation)}]}]}
         with tempfile.TemporaryDirectory() as directory:
             worker = Worker(Path(directory) / 'session')
+            worker.config.update(OPENROUTER_DEFAULTS)
             worker.config['use_jev'] = False
             with patch('heycomputer.providers.api_key', return_value='fixture'), \
                  patch('heycomputer.providers.request_json', return_value=response) as request, \
@@ -91,6 +94,7 @@ class ParametersTests(unittest.TestCase):
     def test_inspection_loop_is_bounded_and_visual_fallback_preserves_task(self):
         with tempfile.TemporaryDirectory() as directory:
             worker = Worker(Path(directory)/'session')
+            worker.config.update(OPENROUTER_DEFAULTS)
             worker.parameter_preparation = {'id':'j1','created':time.time(),'project':'p','text':'300 Hz exactly'}
             result = {'kind':'vision','actions':[action('open_fx','t1','fx1')], 'message':'Set 300 Hz exactly','lua':''}
             with patch('heycomputer.worker.providers.openai_plan',return_value=result):

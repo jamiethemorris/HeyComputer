@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from heycomputer import providers
 from heycomputer.protocol import action, validate_result, PlanError
-from heycomputer.settings import DEFAULTS
+from routing_fixture import OPENROUTER_DEFAULTS as DEFAULTS
 
 
 class ItemRepeatTests(unittest.TestCase):

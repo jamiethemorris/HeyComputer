@@ -1,4 +1,4 @@
-"""HTTP clients; no model-generated code is executed in this process."""
+"""Service clients; no model-generated code is executed in this process."""
 import base64
 import copy
 import json
@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 import uuid
 
+from . import chatgpt_responses
 from .protocol import RESPONSE_SCHEMA, PlanError, action, validate_result
 from .settings import service_config, validate_endpoint
 from .capabilities import HELP, quick_plan, action_candidates
@@ -159,7 +160,17 @@ For optional custom Lua: it is manually reviewed before execution. Only reaper A
 """
 
 
-def openai_plan(text, snapshot, config, history):
+def fallback_response(provider, endpoint, payload, access_token):
+    if provider == "chatgpt":
+        return chatgpt_responses.request_response(access_token, payload)
+    return request_json(endpoint, api_key(provider), payload)
+
+
+def chatgpt_list_models(access_token):
+    return chatgpt_responses.list_models(access_token)
+
+
+def openai_plan(text, snapshot, config, history, *, access_token = None):
     provider, endpoint, model = service_config(config, "fallback")
     snapshot = dict(snapshot)
     search_text = " ".join(h.get("text", "") for h in history[-4:]) + " " + text
@@ -190,7 +201,7 @@ Do not use visual mode for recording, code execution, installation, credentials,
         "text": {"format": {"type": "json_schema", "name": "heycomputer_result", "strict": True, "schema": schema}},
         "max_output_tokens": 6000,
     }
-    response = request_json(endpoint, api_key(provider), payload)
+    response = fallback_response(provider, endpoint, payload, access_token)
     if response.get("status") != "completed":
         raise PlanError("The model could not finish this request. No changes were made.")
     parts = [part.get("text", "") for item in response.get("output", [])
@@ -200,10 +211,12 @@ Do not use visual mode for recording, code execution, installation, credentials,
         result = json.loads("".join(parts))
     except (ValueError, TypeError):
         raise PlanError("The model did not return a usable response. No changes were made.") from None
+    if provider == "chatgpt":
+        chatgpt_responses.reject_reflected_token(result, access_token)
     return validate_result(result, snapshot, config.get("allow_lua", False), config.get("vision_enabled") is True)
 
 
-def plan(text, snapshot, config, history):
+def plan(text, snapshot, config, history, *, access_token=None):
     text = correct_text(text, config)
     # Clarifications need conversation context rather than the isolated Jev recipe.
     awaiting_reply = bool(history and history[-1].get("kind") in ("reply", "lua"))
@@ -211,7 +224,7 @@ def plan(text, snapshot, config, history):
     if direct and (not awaiting_reply or direct["actions"][0]["op"] in ("transport", "launch_action")):
         return validate_result(direct, snapshot)
     fallback_provider, _, fallback_model = service_config(config, "fallback")
-    fallback_key = api_key(fallback_provider)
+    fallback_key = access_token if fallback_provider == "chatgpt" else api_key(fallback_provider)
     jev_provider, _, _ = service_config(config, "jev")
     extended = bool(re.search(r"\b(marker|region|item|items|midi|notes?|chords?|transpose|quantiz[es]?|velocity|pitches|send|sends|bus|rewind|forward|bars?|cycle|loop|skip|save|play|stop|pause|split|duplicat(?:e|es|ing|ion)|copies|group|zoom|metronome|snap|normalize|trim|color|colour|shelf|hertz|hz|band|parameter|open|show|hide|unhide|hidden|visibility|visible|mixer|mcp|tcp|run|launch|scripts?|actions?|tool|delete|remove|bypass|enable|disable|offline|online|reorder|move|copy|automation|automate|envelope|ramp|fade|touch|latch|write)\b", text, re.I))
     extended = extended or bool(re.search(r"\b(samples?|repeat(?:s|ing)?|extend|select|selection|deselect)\b", text, re.I))
@@ -225,9 +238,14 @@ def plan(text, snapshot, config, history):
             if not fallback_key:
                 raise
     if not fallback_key:
+        if fallback_provider == "chatgpt":
+            raise PlanError("Sign in with ChatGPT in Settings first.")
         name = "OpenRouter" if fallback_provider == "openrouter" else "OpenAI"
         return {"kind": "reply", "message": f"This request needs clarification or the conversation model. Add an {name} API key in Settings.", "actions": [], "lua": ""}
-    result = openai_plan(text, snapshot, config, history)
+    if fallback_provider == "chatgpt":
+        result = openai_plan(text, snapshot, config, history, access_token=access_token)
+    else:
+        result = openai_plan(text, snapshot, config, history)
     result["model"] = fallback_model
     return result
 
@@ -239,9 +257,13 @@ def transcribe(wav, config, vocabulary):
             "model": model, "input_audio": {"data": base64.b64encode(wav).decode("ascii"), "format": "wav"},
         })
         return transcript_text(result)
-    boundary = "HeyComputer" + uuid.uuid4().hex
     vocabulary = [correct for _, correct in correction_pairs(config.get("speech_corrections", ""))] + vocabulary
-    fields = {"model": model, "prompt": "REAPER music production commands. Vocabulary: " + ", ".join(vocabulary)[:1800]}
+    prompt = "REAPER music production commands. Vocabulary: " + ", ".join(vocabulary)[:1800]
+    if provider == "mlx_whisper":
+        from .local_transcription import transcribe as transcribe_local
+        return transcript_text(transcribe_local(wav, model, prompt))
+    boundary = "HeyComputer" + uuid.uuid4().hex
+    fields = {"model": model, "prompt": prompt}
     body = bytearray()
     for key, value in fields.items():
         body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode())

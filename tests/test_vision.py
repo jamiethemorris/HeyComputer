@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from heycomputer import vision, providers
 from heycomputer.protocol import PlanError, validate_result, RESPONSE_SCHEMA
-from heycomputer.settings import DEFAULTS
+from routing_fixture import OPENROUTER_DEFAULTS as DEFAULTS
 from heycomputer.vision import Window, Frame, StaleWindow
 from heycomputer.worker import Worker, atomic_json
 

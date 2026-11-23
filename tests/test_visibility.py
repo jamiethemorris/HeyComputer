@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from heycomputer import providers
+from routing_fixture import OPENROUTER_DEFAULTS
 from heycomputer.capabilities import quick_plan
 from heycomputer.protocol import PlanError, action, validate_result
 
@@ -33,7 +34,7 @@ class VisibilityTests(unittest.TestCase):
                 ('show all tracks in the arrange view', 'all', {'tcp': True}),
                 ('hide selected tracks in the track panel please', 'selected', {'tcp': False})):
             with self.subTest(text=text):
-                result = providers.plan(text, self.s, {}, [])
+                result = providers.plan(text, self.s, OPENROUTER_DEFAULTS, [])
                 self.assertEqual(result['model'], 'Direct command')
                 self.assertEqual(result['actions'], [action('track_visibility', target, json.dumps(value))])
 
@@ -72,5 +73,5 @@ class VisibilityTests(unittest.TestCase):
     @patch('heycomputer.providers.jev_plan')
     @patch('heycomputer.providers.openai_plan', return_value={'kind': 'reply', 'message': 'fixture'})
     def test_named_visibility_requests_skip_the_track_setup_recipe(self, fallback, jev, key):
-        providers.plan('Hide Guitar in the mixer', self.s, {}, [])
+        providers.plan('Hide Guitar in the mixer', self.s, OPENROUTER_DEFAULTS, [])
         jev.assert_not_called(); fallback.assert_called_once()

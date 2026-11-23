@@ -6,17 +6,12 @@ __pycache__/
 local-config.json
 *.egg-info/
 luac.out
-watch/build/
-DerivedData/
-xcuserdata/
-*.xcuserstate
 
 # Personal configuration, credentials, and diagnostics
 .env
 .env.*
 !.env.example
 settings.json
-remote-token.json
 ui-memory.json
 wake-activations*.jsonl
 Data/

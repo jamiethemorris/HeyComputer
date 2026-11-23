@@ -13,9 +13,9 @@ local root = dir:match("^(.*)[/\\]")
 package.path = dir.."/lib/?.lua;"..package.path
 local json = require("json")
 local Executor = require("executor")
+local MCP = require("mcp_ipc")
 local Theme = require("theme")
 local Actions = require("actions")
-local Remote = require("remote")
 local TestBridge = require("test_bridge")
 local Wake = require("wake")
 local Runtime = require("runtime")
@@ -41,10 +41,6 @@ local function read_json(path)
   local data=read(path); if not data then return nil end
   local ok,value=pcall(json.decode,data); if ok then return value end
 end
-local remote=Remote.new(session,
-  function(name) return read_json(inbox.."/"..name) end,
-  function(name,value) write(inbox.."/"..name,json.encode(value)) end,
-  function(name) os.remove(inbox.."/"..name) end,os.time)
 local test_bridge=TestBridge.new(session,
   function(name) return read_json(inbox.."/"..name) end,
   function(name,value) write(inbox.."/"..name,json.encode(value)) end,
@@ -61,18 +57,23 @@ local function quote(s)
 end
 local python = root.."/.venv/bin/python"
 S = {text="", status="Starting…", message="", history={}, settings=false,
-  config={use_jev=true,allow_lua=false,vision_enabled=false,mic_device="",mic_channel=1,aliases=""},
+  config={use_jev=false,fallback_provider="chatgpt",allow_lua=false,vision_enabled=false,mic_device="",mic_channel=1,aliases=""},
   devices={},keys={},presets={},newkeys={openrouter="",openai="",typesafe=""},
   recording=false, pending=nil, receipt=nil, lua=nil, ready=false, settings_loaded=false, started=R.time_precise()}
-local count,last_heartbeat,last_poll,last_theme,last_remote = 0,0,0,0,0
+local count,last_heartbeat,last_poll,last_theme,last_publish = 0,0,0,0,0
 local palette=Theme.palette()
+local visual_guard
 local function send(kind,extra)
   if S.pending or S.disconnected then return false end
   count=count+1
   local id="j"..count
   local job=extra or {}; job.id=id; job.kind=kind
-  if not write(inbox.."/"..id..".request.json",json.encode(job)) then return false end
   S.pending={id=id,kind=kind,snapshot=job.snapshot,started=R.time_precise()}
+  if S.mcp_enabled and (kind=="plan" or kind=="record_stop") then
+    S.pending.companion=MCP.new(inbox,session,id,job.snapshot.project,write)
+    if not visual_guard() then return false end -- publish this job's guard before the worker can see it
+  end
+  if not write(inbox.."/"..id..".request.json",json.encode(job)) then return false end
   return true
 end
 local function history(role,text,kind)
@@ -109,7 +110,7 @@ local function activate(kind)
     if send("record_start") then S.status="Opening microphone…" end
   end
 end
-local function visual_guard()
+visual_guard=function()
   local project=R.EnumProjects(-1,"")
   local fx=S.pending and S.pending.opened_fx
   local found
@@ -123,7 +124,7 @@ local function visual_guard()
       end
     end
   end
-  return write(inbox.."/visual-guard.json",json.encode({project=tostring(project),
+  return write(inbox.."/visual-guard.json",json.encode({project=tostring(project),job=S.pending and not S.cancelling and S.pending.id or nil,
     revision=R.GetProjectStateChangeCount(project),recording=R.GetPlayStateEx(project)&4~=0,opened_fx=found}))
 end
 local function poll()
@@ -156,13 +157,17 @@ local function poll()
   local path=inbox.."/"..pending.id..".response.json"
   local result=read_json(path)
   if not result then
-    if now-pending.started>(S.config.vision_enabled and 360 or 150) then
+    -- Browser authorization can take longer than an ordinary model request.
+    local timeout=pending.kind=="chatgpt_sign_in" and 420 or (S.config.vision_enabled and 360 or 150)
+    if now-pending.started>timeout then
       write(inbox.."/visual-cancel.json",json.encode({id=pending.id}))
       S.pending=nil; S.status="Timed out"
-      S.message=(S.visual_active or pending.opened_fx or pending.native_setup) and "Visual control timed out. Earlier inputs may have changed the project. Reopen HeyComputer to reconnect."
+      S.message=(pending.companion or S.visual_active or pending.opened_fx or pending.native_setup) and "Request timed out. Earlier edits may have changed the project. Check REAPER before retrying."
         or "No changes were made. Reopen HeyComputer to reconnect."
       S.ready=false; S.timed_out=true
       os.remove(inbox.."/ready.json")
+    elseif pending.companion and (pending.kind=="plan" or pending.kind=="record_stop") then
+      pending.companion(S.cancelling or S.recording or now-pending.started>=120)
     end
     return
   end
@@ -223,15 +228,31 @@ local function poll()
     return
   elseif result.kind=="settings" then
     S.settings_loaded=true
+    S.mcp_enabled=result.config.reaper_mcp_enabled==true
     S.config=result.config; S.devices=result.devices or {}; S.keys=result.keys or {}
     S.outputs=result.outputs or {};S.voices=result.voices or {};S.voice_error=result.voice_error or ""
-    S.remote=result.remote or {}; S.pair_code=nil; S.pair_qr=nil
     S.vision=result.vision or {}
     S.wake=result.wake or {}
     S.presets=result.presets or {}
+    S.chatgpt_status=result.chatgpt_status
     S.audio_error=result.audio_error or ""
     S.newkeys={openrouter="",openai="",typesafe=""}; S.status="Ready"
-    if not S.keys[S.config.fallback_provider] then S.settings=true end
+    local provider=S.config.fallback_provider
+    if (provider=="chatgpt" and S.chatgpt_status~="signed_in")
+      or (provider~="chatgpt" and not S.keys[provider]) then S.settings=true end
+  elseif result.kind=="chatgpt_account" then
+    S.chatgpt_status=result.status
+    S.chatgpt_message=result.message
+    if pending.kind~="chatgpt_status" or result.status~="signed_in" then S.chatgpt_models=nil end
+    S.status=result.message and "Check ChatGPT account" or "Ready"
+    -- A fresh sign-in is the moment the model list becomes available.
+    if pending.kind=="chatgpt_sign_in" and result.status=="signed_in" and send("chatgpt_models") then
+      S.status="Refreshing ChatGPT models…"
+    end
+  elseif result.kind=="chatgpt_models" then
+    S.chatgpt_models=result.models or {}
+    S.chatgpt_message=result.message or (#S.chatgpt_models==0 and "No models were listed for this account." or nil)
+    S.status=result.message and "Check ChatGPT account" or "Ready"
   elseif result.kind=="audio_devices" then
     S.devices=result.devices or {};S.outputs=result.outputs or {};S.voices=result.voices or {}
     S.audio_error=result.audio_error or "";S.voice_error=result.voice_error or "";S.status="Audio devices refreshed"
@@ -240,10 +261,6 @@ local function poll()
   elseif result.kind=="visual_done" then
     S.status="Done"; S.message=result.message; S.receipt=nil
     history("assistant",S.message,"receipt")
-  elseif result.kind=="remote_pairing" then
-    S.remote=result.remote; S.pair_code=result.code
-    S.pair_qr=result.qr_rows
-    S.pair_until=R.time_precise()+result.expires_in; S.status="Ready"
   elseif result.kind=="wake_log" then S.wake_entries=result.entries or {}; S.status="Ready"
   elseif result.kind=="recording" then S.recording=true; S.record_id=result.record_id; S.status="Listening…"
   elseif result.kind=="cancelled" then S.recording=false; S.record_id=nil; S.status="Ready"
@@ -278,6 +295,19 @@ local function combo(label,current,items)
 end
 local function label(text) ImGui.TextDisabled(ctx,text) end
 local provider_names={openrouter="OpenRouter",typesafe="TypeSafe",openai="OpenAI"}
+local chatgpt_labels={signed_in="Signed in",signed_out="Signed out",usage_disabled="Signed in; ChatGPT plan usage not enabled"}
+local function tip(text)
+  if ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx,text) end
+end
+local function hint(text)
+  ImGui.SameLine(ctx); ImGui.TextDisabled(ctx,"(?)"); tip(text)
+end
+local function section(title,open,body)
+  if ImGui.CollapsingHeader(ctx,title,nil,open and ImGui.TreeNodeFlags_DefaultOpen or ImGui.TreeNodeFlags_None) then
+    body()
+    ImGui.Spacing(ctx)
+  end
+end
 local function use_preset(service,provider)
   local preset=S.presets[service] and S.presets[service][provider]
   if not preset then return end
@@ -285,17 +315,32 @@ local function use_preset(service,provider)
   S.config[service.."_endpoint"]=preset.endpoint
   S.config[service.."_model"]=preset.model
 end
-local function service_view(service,title)
-  ImGui.Spacing(ctx); label(title)
+local function provider_options(service)
   local direct=service=="jev" and "typesafe" or "openai"
-  local current=S.config[service.."_provider"] or "openrouter"
-  local selected=combo("##provider_"..service,current,{
+  local options={
     {value="openrouter",title="OpenRouter (shared key)"},
-    {value=direct,title=provider_names[direct].." (direct)"}})
+    {value=direct,title=provider_names[direct].." (direct)"}}
+  if service=="fallback" and S.presets.fallback and S.presets.fallback.chatgpt then
+    options[#options+1]={value="chatgpt",title="ChatGPT (account sign-in)"}
+  end
+  if service=="transcription" and S.presets.transcription and S.presets.transcription.mlx_whisper then
+    options[#options+1]={value="mlx_whisper",title="MLX Whisper (local)"}
+  end
+  return options
+end
+local function provider_combo(service)
+  local current=S.config[service.."_provider"] or "openrouter"
+  local selected=combo("##provider_"..service,current,provider_options(service))
   if selected~=current then use_preset(service,selected) end
+  return selected
+end
+local function model_input(service)
   label("Model ID")
   ImGui.SetNextItemWidth(ctx,-1)
   _,S.config[service.."_model"]=ImGui.InputText(ctx,"##model_"..service,S.config[service.."_model"] or "")
+end
+local function model_presets(service,provider)
+  if provider=="chatgpt" or provider=="mlx_whisper" then return end
   local models=service=="fallback" and {"gpt-6.1-sol","gpt-6-luna","gpt-6-astra"}
     or service=="transcription" and {"gpt-transcribe","gpt-4o-mini-transcribe","whisper-1"}
     or {"jev-latest"}
@@ -303,36 +348,101 @@ local function service_view(service,title)
   if ImGui.BeginPopup(ctx,"models_"..service) then
     for _,model in ipairs(models) do
       if ImGui.MenuItem(ctx,model) then
-        local prefix=selected=="openrouter" and (service=="jev" and "~typesafe/" or "openai/") or ""
+        local prefix=provider=="openrouter" and (service=="jev" and "~typesafe/" or "openai/") or ""
         S.config[service.."_model"]=prefix..model
       end
     end
     ImGui.EndPopup(ctx)
   end
-  label("Endpoint URL")
+end
+local function endpoint_input(service,provider,title)
+  if provider=="chatgpt" or provider=="mlx_whisper" then return end
+  label(title.." endpoint URL")
   ImGui.SetNextItemWidth(ctx,-1)
   _,S.config[service.."_endpoint"]=ImGui.InputText(ctx,"##endpoint_"..service,S.config[service.."_endpoint"] or "")
 end
-local function settings_view()
-  if not S.config.fallback_provider then label("Loading settings…"); return end
-  ImGui.BeginDisabled(ctx,S.pending~=nil)
-  label("API connection")
+
+local function account_view()
+  local provider=S.config.fallback_provider
+  local status=S.chatgpt_status
+  local signed=status=="signed_in" or status=="usage_disabled"
+  if provider~="chatgpt" then
+    ImGui.TextWrapped(ctx,"Conversation: "..(provider_names[provider] or provider)..".")
+    if S.presets.fallback and S.presets.fallback.chatgpt then
+      ImGui.BeginDisabled(ctx,S.pending~=nil)
+      if ImGui.Button(ctx,"Use my ChatGPT account",-1,0) then use_preset("fallback","chatgpt") end
+      ImGui.EndDisabled(ctx)
+    end
+  end
+  if provider=="chatgpt" or signed then
+    ImGui.TextWrapped(ctx,"ChatGPT account: "..(chatgpt_labels[status] or "Status unavailable"))
+    ImGui.BeginDisabled(ctx,not S.ready or S.recording)
+    if status~="signed_in" and ImGui.Button(ctx,"Sign in") and send("chatgpt_sign_in") then
+      S.status="Signing in…"; S.chatgpt_message="Complete sign-in in your browser. If asked, enable ChatGPT plan usage."
+    end
+    if status~="signed_in" and status~="signed_out" then ImGui.SameLine(ctx) end
+    if status~="signed_out" and ImGui.Button(ctx,"Sign out") and send("chatgpt_sign_out") then S.status="Signing out…" end
+    ImGui.EndDisabled(ctx)
+    if S.chatgpt_message then ImGui.TextWrapped(ctx,S.chatgpt_message) end
+  end
+  label("Model")
+  if provider=="chatgpt" and S.chatgpt_models and #S.chatgpt_models>0 then
+    local items={}
+    for _,model in ipairs(S.chatgpt_models) do items[#items+1]={value=model.slug,title=model.display_name.." ("..model.slug..")"} end
+    S.config.fallback_model=combo("##chatgpt_model",S.config.fallback_model or "",items)
+  else
+    ImGui.SetNextItemWidth(ctx,-1)
+    _,S.config.fallback_model=ImGui.InputText(ctx,"##model_fallback",S.config.fallback_model or "")
+  end
+  if provider=="chatgpt" then
+    ImGui.BeginDisabled(ctx,not S.ready or S.recording)
+    if ImGui.SmallButton(ctx,"Refresh models") and send("chatgpt_models") then S.status="Refreshing ChatGPT models…" end
+    ImGui.EndDisabled(ctx)
+  end
+end
+
+local function other_providers_view()
   if ImGui.Button(ctx,"Use OpenRouter for all",-1,0) then
     for _,service in ipairs({"jev","fallback","transcription"}) do use_preset(service,"openrouter") end
   end
-  ImGui.TextWrapped(ctx,"One OpenRouter key covers Jev, conversation and voice.")
+  tip("One OpenRouter key covers Jev, conversation and transcription.")
+  label("Conversation provider")
+  local conversation=provider_combo("fallback")
+  model_presets("fallback",conversation)
+  endpoint_input("fallback",conversation,"Conversation")
+  local transcription=S.config.transcription_provider
+  endpoint_input("transcription",transcription,"Transcription")
+  ImGui.Spacing(ctx)
+  _,S.config.use_jev=ImGui.Checkbox(ctx,"Use Jev for routine commands",S.config.use_jev==true)
+  local jev
+  if S.config.use_jev then
+    jev=provider_combo("jev")
+    model_input("jev")
+    model_presets("jev",jev)
+    endpoint_input("jev",jev,"Jev")
+  end
   local needed={}
-  for _,service in ipairs({"jev","fallback","transcription"}) do needed[S.config[service.."_provider"]]=true end
+  if conversation~="chatgpt" then needed[conversation]=true end
+  if transcription~="mlx_whisper" then needed[transcription]=true end
+  if jev then needed[jev]=true end
+  local first=true
   for _,provider in ipairs({"openrouter","typesafe","openai"}) do
     if needed[provider] then
-      label(provider_names[provider].." key"..(S.keys[provider] and " · configured" or " · not configured"))
+      if first then label("API keys"); hint("Stored in macOS Keychain. Leave a field blank to keep the saved key."); first=false end
+      label(provider_names[provider]..(S.keys[provider] and " · configured" or " · not configured"))
       ImGui.SetNextItemWidth(ctx,-1)
       _,S.newkeys[provider]=ImGui.InputText(ctx,"##key"..provider,S.newkeys[provider],ImGui.InputTextFlags_Password)
     end
   end
-  ImGui.TextWrapped(ctx,"Keys are stored in macOS Keychain. Leave blank to keep a saved key.")
-  ImGui.TextWrapped(ctx,"Use Save all settings at the bottom to apply changes across this page.")
+end
+
+local function account_section()
+  account_view()
   ImGui.Spacing(ctx)
+  if ImGui.CollapsingHeader(ctx,"Other providers",nil,ImGui.TreeNodeFlags_None) then other_providers_view() end
+end
+
+local function voice_input_section()
   label("Microphone")
   local devices={{value="",title="System default"}}
   for _,device in ipairs(S.devices) do devices[#devices+1]={value=device.id,title=device.name.." ("..device.channels.." inputs)"} end
@@ -340,12 +450,62 @@ local function settings_view()
   ImGui.SetNextItemWidth(ctx,80)
   local changed,value=ImGui.InputInt(ctx,"Input channel",S.config.mic_channel)
   if changed then S.config.mic_channel=math.max(1,value) end
+  ImGui.BeginDisabled(ctx,S.pending~=nil or not S.ready or S.recording)
+  if ImGui.SmallButton(ctx,"Refresh devices & voices") then send("audio_devices") end
+  ImGui.EndDisabled(ctx)
   if S.audio_error~="" then ImGui.TextWrapped(ctx,S.audio_error) end
-  ImGui.Spacing(ctx);label("Spoken replies · local macOS voice")
+  ImGui.Spacing(ctx); label("Transcription")
+  local provider=provider_combo("transcription")
+  model_input("transcription")
+  model_presets("transcription",provider)
+  if provider=="mlx_whisper" then
+    ImGui.TextWrapped(ctx,"Runs locally on Apple Silicon, only for submitted Talk recordings.")
+  elseif not S.keys[provider] then
+    ImGui.TextWrapped(ctx,"Needs a "..(provider_names[provider] or provider).." key under Other providers.")
+  end
+  ImGui.Spacing(ctx); label("Wake & stop words")
+  ImGui.TextWrapped(ctx,"Detected locally by sherpa-onnx. Idle audio never leaves this Mac.")
+  _,S.config.wake_enabled=ImGui.Checkbox(ctx,"Listen for a wake word",S.config.wake_enabled==true)
+  hint("Listens only while this panel is open, including hidden dock tabs. Idle audio stays in memory. Say the stop phrase only when ready to send; a 90-second timeout discards the recording. English phrases only.")
+  if not S.config.wake_enabled then return end
+  label("Wake phrase")
+  ImGui.SetNextItemWidth(ctx,-1)
+  _,S.config.wake_phrase=ImGui.InputText(ctx,"##wakephrase",S.config.wake_phrase or "hey computer")
+  label("Stop & send phrase")
+  ImGui.SetNextItemWidth(ctx,-1)
+  _,S.config.wake_stop_phrase=ImGui.InputText(ctx,"##stopphrase",S.config.wake_stop_phrase or "execute")
+  ImGui.SetNextItemWidth(ctx,-1)
+  local sensitivity_changed,sensitivity=ImGui.SliderDouble(ctx,"##wakesensitivity",1-(S.config.wake_threshold or .35),.05,.95,"Sensitivity %.2f")
+  if sensitivity_changed then S.config.wake_threshold=1-sensitivity end
+  tip("Higher sensitivity hears quieter phrases but may trigger more often.")
+  _,S.config.wake_log_enabled=ImGui.Checkbox(ctx,"Keep a local activation log",S.config.wake_log_enabled~=false)
+  hint("Stores detected phrases, timestamps, outcomes and submitted command transcripts. No audio is saved. Rotates at 1 MB in Data/HeyComputer.")
+  local wake_info=S.meter and S.meter.wake or S.wake or {}
+  ImGui.TextWrapped(ctx,wake_info.status or "Wake word off")
+  if wake_info.log_error and wake_info.log_error~="" then ImGui.TextWrapped(ctx,wake_info.log_error) end
+  ImGui.BeginDisabled(ctx,S.pending~=nil or S.recording)
+  if ImGui.SmallButton(ctx,"View / refresh activation log") then send("wake_log") end
+  ImGui.SameLine(ctx)
+  if ImGui.SmallButton(ctx,"Clear log") then send("wake_log_clear") end
+  ImGui.EndDisabled(ctx)
+  if S.wake_entries and ImGui.CollapsingHeader(ctx,"Recent activations") then
+    if #S.wake_entries==0 then ImGui.TextWrapped(ctx,"No activations logged.") end
+    for _,entry in ipairs(S.wake_entries) do
+      label((entry.time or "").." · "..(entry.event or ""))
+      if entry.phrase then ImGui.TextWrapped(ctx,"Detected: "..entry.phrase) end
+      if entry.transcript then ImGui.TextWrapped(ctx,"Said: "..entry.transcript) end
+      if entry.reason then ImGui.TextWrapped(ctx,entry.reason) end
+      ImGui.Spacing(ctx)
+    end
+  end
+end
+
+local function spoken_replies_section()
   local was_enabled=S.config.speech_enabled==true
   _,S.config.speech_enabled=ImGui.Checkbox(ctx,"Speak questions, replies and problems",was_enabled)
+  hint("Local macOS voice: no speech API or fees. Successful commands stay silent. Speech pauses wake detection and stops when you start Talk or REAPER recording.")
   if was_enabled and not S.config.speech_enabled then voice.stop() end
-  ImGui.TextWrapped(ctx,"No speech API or usage fees. Successful commands stay silent. Speech pauses wake detection and stops when you start Talk or REAPER recording.")
+  if not S.config.speech_enabled then return end
   local voices={{value="",title="System voice"}}
   for _,v in ipairs(S.voices or {})do voices[#voices+1]={value=v.id,title=v.name.." · "..v.language}end
   label("Voice");S.config.speech_voice=combo("##speech_voice",S.config.speech_voice or "",voices)
@@ -375,135 +535,89 @@ local function settings_view()
   ImGui.SetNextItemWidth(ctx,-1)
   local _,volume=ImGui.SliderDouble(ctx,"##speech_volume",(S.config.speech_volume or .2)*100,0,100,"Voice volume %.0f%%")
   S.config.speech_volume=volume/100
+  tip("Starts at 20%. Does not change REAPER or system volume.")
   ImGui.BeginDisabled(ctx,not S.ready or S.recording)
   if ImGui.Button(ctx,"Test voice") then voice.preview(S) end
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx,"Stop voice") then voice.stop() end
   ImGui.EndDisabled(ctx)
-  ImGui.TextWrapped(ctx,"Test voice previews these output and volume choices before saving. Volume starts at 20% and does not change REAPER or system volume.")
+  hint("Test voice previews these output and volume choices before saving.")
   local voice_info=S.meter and S.meter.voice or {}
   if S.voice_error and S.voice_error~="" then ImGui.TextWrapped(ctx,S.voice_error)end
   if voice_info.error and voice_info.error~="" then ImGui.TextWrapped(ctx,voice_info.error)end
-  ImGui.Spacing(ctx); label("Local wake & stop words")
-  _,S.config.wake_enabled=ImGui.Checkbox(ctx,"Listen for a wake word",S.config.wake_enabled==true)
-  label("Wake phrase")
-  ImGui.SetNextItemWidth(ctx,-1)
-  _,S.config.wake_phrase=ImGui.InputText(ctx,"##wakephrase",S.config.wake_phrase or "hey computer")
-  label("Stop & send phrase")
-  ImGui.SetNextItemWidth(ctx,-1)
-  _,S.config.wake_stop_phrase=ImGui.InputText(ctx,"##stopphrase",S.config.wake_stop_phrase or "execute")
-  ImGui.SetNextItemWidth(ctx,-1)
-  local sensitivity_changed,sensitivity=ImGui.SliderDouble(ctx,"##wakesensitivity",1-(S.config.wake_threshold or .35),.05,.95,"Sensitivity %.2f")
-  if sensitivity_changed then S.config.wake_threshold=1-sensitivity end
-  ImGui.TextWrapped(ctx,"Higher sensitivity hears quieter phrases but may trigger more often. English phrases only. Save all settings to apply.")
-  _,S.config.wake_log_enabled=ImGui.Checkbox(ctx,"Keep a local activation log",S.config.wake_log_enabled~=false)
-  ImGui.TextWrapped(ctx,"Listens only while this panel is open, including hidden dock tabs. Idle audio stays in memory. Say the stop phrase only when ready to send; a 90-second timeout discards the recording.")
-  ImGui.TextWrapped(ctx,"The log stores detected phrases, timestamps, outcomes and submitted command transcripts. Cancelled recordings have no transcript. No audio is saved. Logs rotate at 1 MB and stay in Data/HeyComputer.")
-  local wake_info=S.meter and S.meter.wake or S.wake or {}
-  ImGui.TextWrapped(ctx,wake_info.status or "Wake word off")
-  if wake_info.log_error and wake_info.log_error~="" then ImGui.TextWrapped(ctx,wake_info.log_error) end
-  ImGui.BeginDisabled(ctx,S.pending~=nil or S.recording)
-  if ImGui.SmallButton(ctx,"View / refresh activation log") then send("wake_log") end
-  ImGui.SameLine(ctx)
-  if ImGui.SmallButton(ctx,"Clear log") then send("wake_log_clear") end
-  ImGui.EndDisabled(ctx)
-  if S.wake_entries and ImGui.CollapsingHeader(ctx,"Recent activations") then
-    if #S.wake_entries==0 then ImGui.TextWrapped(ctx,"No activations logged.") end
-    for _,entry in ipairs(S.wake_entries) do
-      label((entry.time or "").." · "..(entry.event or ""))
-      if entry.phrase then ImGui.TextWrapped(ctx,"Detected: "..entry.phrase) end
-      if entry.transcript then ImGui.TextWrapped(ctx,"Said: "..entry.transcript) end
-      if entry.reason then ImGui.TextWrapped(ctx,entry.reason) end
-      ImGui.Spacing(ctx)
-    end
-  end
-  ImGui.Spacing(ctx); label("iPhone & Watch remote")
-  _,S.config.remote_enabled=ImGui.Checkbox(ctx,"Enable remote control",S.config.remote_enabled==true)
-  ImGui.SetNextItemWidth(ctx,100)
-  _,S.config.remote_port=ImGui.InputInt(ctx,"Port",S.config.remote_port or 8765)
-  ImGui.TextWrapped(ctx,"Use only on trusted Wi-Fi. This prototype uses unencrypted local HTTP. Save all settings to apply.")
-  local remote_info=S.remote or {}
-  if remote_info.running then
-    ImGui.TextWrapped(ctx,remote_info.url or "")
-    if ImGui.SmallButton(ctx,"Copy Mac address") then ImGui.SetClipboardText(ctx,remote_info.url) end
-    ImGui.BeginDisabled(ctx,S.pending~=nil or S.recording)
-    if ImGui.Button(ctx,"Pair iPhone") then send("remote_pair") end
-    ImGui.SameLine(ctx)
-    if ImGui.Button(ctx,"Forget devices") then send("remote_revoke") end
-    ImGui.EndDisabled(ctx)
-  end
-  if remote_info.error and remote_info.error~="" then ImGui.TextWrapped(ctx,remote_info.error) end
-  if S.pair_code and R.time_precise()<S.pair_until then
-    if S.pair_qr then
-      ImGui.TextWrapped(ctx,"Open HeyComputer on your iPhone and tap Scan Mac QR code.")
-      local x,y=ImGui.GetCursorScreenPos(ctx)
-      local cells=#S.pair_qr
-      local scale=math.max(2,math.min(5,math.floor(ImGui.GetContentRegionAvail(ctx)/cells)))
-      local size=cells*scale
-      local draw=ImGui.GetWindowDrawList(ctx)
-      ImGui.DrawList_AddRectFilled(draw,x,y,x+size,y+size,0xFFFFFFFF)
-      for row,line in ipairs(S.pair_qr) do
-        for col=1,#line do
-          if line:sub(col,col)=="1" then
-            local left,top=x+(col-1)*scale,y+(row-1)*scale
-            ImGui.DrawList_AddRectFilled(draw,left,top,left+scale,top+scale,0x000000FF)
-          end
-        end
-      end
-      ImGui.Dummy(ctx,size,size)
-    end
-    ImGui.Text(ctx,"Pairing code: "..S.pair_code)
-    label("Expires in "..math.ceil(S.pair_until-R.time_precise()).." seconds; one use.")
-  end
-  service_view("transcription","Transcription")
-  ImGui.Spacing(ctx); label("Commands & conversation")
-  _,S.config.use_jev=ImGui.Checkbox(ctx,"Use Jev for routine commands",S.config.use_jev)
-  service_view("jev","Jev · routine commands")
-  service_view("fallback","GPT · conversation and fallback")
-  ImGui.Spacing(ctx); label("Visual control · macOS 14+")
+end
+
+local function reaper_control_section()
+  _,S.config.reaper_mcp_enabled=ImGui.Checkbox(ctx,"Enable REAPER MCP tools",S.config.reaper_mcp_enabled==true)
+  hint("Lets the conversation model inspect and change the project through a trusted local REAPER MCP server. To override the command, set HEYCOMPUTER_REAPER_MCP_COMMAND in the helper's local environment.")
+  ImGui.Spacing(ctx)
   ImGui.BeginDisabled(ctx,S.pending~=nil)
-  _,S.config.vision_enabled=ImGui.Checkbox(ctx,"Allow REAPER-only visual control",S.config.vision_enabled==true)
-  _,S.config.ui_memory_enabled=ImGui.Checkbox(ctx,"Use and learn UI memory",S.config.ui_memory_enabled~=false)
+  _,S.config.vision_enabled=ImGui.Checkbox(ctx,"Allow REAPER-only visual control (macOS 14+)",S.config.vision_enabled==true)
   ImGui.EndDisabled(ctx)
-  ImGui.TextWrapped(ctx,"Uses the GPT model and endpoint above. Only allowed REAPER windows are sent as images; nothing is saved to your screenshot folder. Save all settings to apply.")
-  ImGui.TextWrapped(ctx,"UI memory keeps reusable control notes in Data/HeyComputer/ui-memory.json inside REAPER’s resource folder. Locations belong to each window and are checked against the current image.")
-  ImGui.TextWrapped(ctx,"Visual input moves your mouse and uses keyboard focus. Escape or Cancel stops further input. Earlier changes may need REAPER or plugin Undo.")
-  ImGui.BeginDisabled(ctx,S.pending~=nil or not S.ready or S.recording or not S.config.vision_enabled)
-  if ImGui.Button(ctx,"Check permissions") then send("visual_permissions") end
-  ImGui.SameLine(ctx)
-  if ImGui.Button(ctx,"Refresh windows") then send("visual_hosts") end
-  local vision=S.vision or {}
-  if vision.error then ImGui.TextWrapped(ctx,vision.error) end
+  hint("Uses the conversation model. Only allowed REAPER windows are sent as images; nothing is saved to your screenshot folder.")
+  ImGui.TextWrapped(ctx,"Visual input moves your mouse and uses keyboard focus. Escape or Cancel stops it. Earlier changes may need REAPER or plugin Undo.")
   if S.config.vision_enabled then
+    ImGui.BeginDisabled(ctx,S.pending~=nil)
+    _,S.config.ui_memory_enabled=ImGui.Checkbox(ctx,"Use and learn UI memory",S.config.ui_memory_enabled~=false)
+    ImGui.EndDisabled(ctx)
+    hint("Reusable control notes are kept in Data/HeyComputer/ui-memory.json. Locations belong to each window and are checked against the current image.")
+    ImGui.BeginDisabled(ctx,S.pending~=nil or not S.ready or S.recording)
+    if ImGui.Button(ctx,"Check permissions") then send("visual_permissions") end
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx,"Refresh windows") then send("visual_hosts") end
+    local vision=S.vision or {}
+    if vision.error then ImGui.TextWrapped(ctx,vision.error) end
     label("Screen Recording: "..(vision.screen and "allowed" or "needed").." · Accessibility: "..(vision.accessibility and "allowed" or "needed"))
     for _,window in ipairs(vision.hosts or {}) do
       local changed,allowed=ImGui.Checkbox(ctx,(window.title~="" and window.title or "Plugin host").."##host"..window.id,window.allowed)
       if changed then send("visual_approve",{window=window.id,enabled=allowed}) end
     end
-    ImGui.TextWrapped(ctx,"Separate REAPER plugin-host windows must be checked here for this session. Reopen or refresh if a window changes.")
+    ImGui.EndDisabled(ctx)
+    ImGui.TextWrapped(ctx,"Check each separate plugin-host window to allow it for this session.")
+  end
+  ImGui.Spacing(ctx)
+  _,S.config.allow_lua=ImGui.Checkbox(ctx,"Allow reviewed custom Lua",S.config.allow_lua==true)
+  hint("A custom script runs only after you review it and press Run.")
+end
+
+local function vocabulary_section()
+  label("Pronunciation / spelling corrections")
+  hint("One per line: ReSplice = ReaSplice, or ree splice = ReaSplice. Applied after transcription and to typed commands; whole phrases, any case.")
+  _,S.config.speech_corrections=ImGui.InputTextMultiline(ctx,"##speech_corrections",S.config.speech_corrections or "",-1,75)
+  label("Term definitions & preferences")
+  hint("Examples: ReaSplice is my sample-browser script; Pro-Q = VST3 FabFilter Pro-Q 4; Guitar 1 = Input 3. Installed actions and scripts can also be launched by name, e.g. open ReaSplice.")
+  _,S.config.aliases=ImGui.InputTextMultiline(ctx,"##aliases",S.config.aliases,-1,75)
+end
+
+local function settings_view()
+  if not S.settings_loaded then label("Loading settings…"); return end
+  local width=ImGui.GetContentRegionAvail(ctx)
+  local message_height=0
+  if S.message~="" then
+    local _,h=ImGui.CalcTextSize(ctx,S.message,nil,nil,false,width)
+    message_height=(h or 0)+4
+  end
+  local footer=ImGui.GetFrameHeightWithSpacing(ctx)+ImGui.GetTextLineHeightWithSpacing(ctx)+message_height+8
+  ImGui.BeginDisabled(ctx,S.pending~=nil)
+  if ImGui.BeginChild(ctx,"##settings_scroll",0,-footer) then
+    section("Account and model",true,account_section)
+    section("Voice input",false,voice_input_section)
+    section("Spoken replies",false,spoken_replies_section)
+    section("REAPER control",false,reaper_control_section)
+    section("Vocabulary",false,vocabulary_section)
+    ImGui.EndChild(ctx)
   end
   ImGui.EndDisabled(ctx)
-  ImGui.TextWrapped(ctx,"Enter full endpoint URLs. Jev uses System One / Decisions; GPT uses Responses; voice uses audio/transcriptions. Changing provider restores its defaults.")
-  _,S.config.allow_lua=ImGui.Checkbox(ctx,"Allow reviewed custom Lua",S.config.allow_lua)
-  ImGui.Spacing(ctx); label("Pronunciation / spelling corrections")
-  _,S.config.speech_corrections=ImGui.InputTextMultiline(ctx,"##speech_corrections",S.config.speech_corrections or "",-1,75)
-  ImGui.TextWrapped(ctx,"One correction per line: ReSplice = ReaSplice, or ree splice = ReaSplice. Used after transcription and for typed commands; matches whole phrases regardless of case.")
-  ImGui.Spacing(ctx); label("Term definitions & preferences")
-  _,S.config.aliases=ImGui.InputTextMultiline(ctx,"##aliases",S.config.aliases,-1,75)
-  ImGui.TextWrapped(ctx,"Examples: ReaSplice is my sample-browser script; Pro-Q = VST3 FabFilter Pro-Q 4; Guitar 1 = Input 3.")
-  ImGui.TextWrapped(ctx,"Installed Main actions and scripts can be launched by name, e.g. open ReaSplice. Runs the registered action with its own behavior and undo support.")
-  ImGui.Spacing(ctx)
+  ImGui.Separator(ctx)
   ImGui.BeginDisabled(ctx,S.pending~=nil or not S.ready or S.recording)
   if ImGui.Button(ctx,"Save all settings",-1,0) then
     if send("save_settings",{config=S.config,keys=S.newkeys}) then
       S.newkeys={openrouter="",openai="",typesafe=""}; S.status="Saving…"; S.message=""
     end
   end
-  if ImGui.SmallButton(ctx,"Refresh audio devices & voices") then send("audio_devices") end
   ImGui.EndDisabled(ctx)
-  ImGui.Spacing(ctx); label(S.status)
+  label(S.status)
   if S.message~="" then ImGui.TextWrapped(ctx,S.message) end
-  ImGui.EndDisabled(ctx)
 end
 
 local function command_view()
@@ -591,9 +705,6 @@ local function frame()
   -- discarded even if that job completes during this frame.
   local action=Actions.take(session,S)
   if action then activate(action) end
-  local remote_action=remote.take(S)
-  if remote_action=="start" or remote_action=="stop" then activate("talk")
-  elseif remote_action=="cancel" then send("record_cancel") end
   local wake_event=wake.take(S)
   if wake_event then
     if wake_event.action=="start" then
@@ -645,10 +756,10 @@ local function frame()
   end
   ImGui.PopStyleVar(ctx,3); ImGui.PopStyleColor(ctx,colors)
   Actions.publish(session,S)
-  if not S.disconnected and R.time_precise()-last_remote>.2 then
-    remote.publish(S); test_bridge.publish(S); wake.publish(S)
+  if not S.disconnected and R.time_precise()-last_publish>.2 then
+    test_bridge.publish(S); wake.publish(S)
     voice.publish(S)
-    last_remote=R.time_precise()
+    last_publish=R.time_precise()
   end
   if open then R.defer(frame) end
 end
@@ -656,7 +767,6 @@ end
 R.atexit(function()
   if S.pending then pcall(write,inbox.."/visual-cancel.json",json.encode({id=S.pending.id})) end
   Actions.detach(session)
-  os.remove(inbox.."/remote-state.json")
   os.remove(inbox.."/test-state.json")
   os.remove(inbox.."/test-command.json")
   os.remove(inbox.."/test-rejected.json")
