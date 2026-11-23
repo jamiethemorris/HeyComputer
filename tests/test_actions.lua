@@ -299,43 +299,19 @@ test("an older panel cannot change the current recording indicator",function()
 end)
 
 test("wake recording lights existing Talk toolbars without a prior button press",function()
-  registered_actions={{9001,'Script: ReaJev - Talk or stop and send.lua'},
-    {9002,'Script: HeyComputer - Talk or stop and send.lua'},
-    {9003,'Script: ReaJev - Send.lua'}, {9004,'Script: HeyComputer.lua'},
-    {9005,'Custom: ReaJev - Talk or stop and send.lua'}}
+  registered_actions={{9002,'Script: HeyComputer - Talk or stop and send.lua'},
+    {9003,'Script: HeyComputer - Send.lua'}, {9004,'Script: HeyComputer.lua'},
+    {9005,'Custom: HeyComputer - Talk or stop and send.lua'}}
   assert(A.register('/repo/reaper'));assert(#registrations==2)
   A.attach('wake')
   A.publish('wake',state({recording=true}))
-  assert(toggles['0:1']==1 and toggles['0:9001']==1 and toggles['0:9002']==1)
+  assert(toggles['0:1']==1 and toggles['0:9002']==1)
   assert(toggles['0:9003']==nil and toggles['0:9004']==nil and toggles['0:9005']==nil)
   assert(#launches==0 and storage.HeyComputerActionsrequest==nil)
   A.publish('wake',state({recording=false}))
-  assert(toggles['0:9001']==0 and toggles['0:9002']==0)
+  assert(toggles['0:9002']==0)
   A.publish('wake',state({recording=true}));A.detach('wake')
-  assert(toggles['0:9001']==0 and toggles['0:9002']==0)
-end)
-
-test("existing Talk shortcut starts the renamed panel and keeps its toolbar state",function()
-  A.register("/repo/reaper")
-  reaper.get_action_context=function() return false,"reaper/ReaJev - Talk or stop and send.lua",0,9001 end
-  reaper.defer=function() end
-  launch_callback=function() A.attach("renamed") end
-  dofile("reaper/ReaJev - Talk or stop and send.lua")
-  assert(registrations[#registrations][3]=="reaper/HeyComputer.lua")
-  assert(A.take("renamed",state({text=""}))=="talk")
-  A.publish("renamed",state({recording=true}))
-  assert(toggles["0:1"]==1 and toggles["0:9001"]==1)
-  A.detach("renamed")
-  assert(toggles["0:1"]==0 and toggles["0:9001"]==0)
-end)
-
-test("old folder alias resolves to the renamed installation",function()
-  local legacy=require("legacy")
-  reaper.file_exists=function(path) return path=="/repo/HeyComputer/reaper/HeyComputer.lua" end
-  assert(legacy.directory("/repo/ReaJev/reaper")=="/repo/HeyComputer/reaper")
-  assert(legacy.directory("/repo/Other/reaper")=="/repo/Other/reaper")
-  reaper.file_exists=function() return false end
-  assert(legacy.directory("/repo/ReaJev/reaper")=="/repo/ReaJev/reaper")
+  assert(toggles['0:9002']==0)
 end)
 
 print(total.." action tests passed")

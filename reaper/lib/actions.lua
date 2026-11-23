@@ -10,13 +10,11 @@ end
 local function put(key,value) reaper.SetExtState(section,key,json.encode(value),false) end
 local function clear(key) reaper.DeleteExtState(section,key,false) end
 local function recording_toggle(recording)
-  local legacy=get("legacy_talk")
   local seen={}
   local function update(command)
     if command>0 and not seen[command] then
       seen[command]=true
       local state=recording and 1 or 0
-      -- Keep both the current action and an existing toolbar shortcut in sync.
       if reaper.GetToggleCommandStateEx(0,command)~=state then
         reaper.SetToggleCommandState(0,command,state)
         reaper.RefreshToolbar2(0,command)
@@ -24,11 +22,6 @@ local function recording_toggle(recording)
     end
   end
   for _,command in ipairs(talk_commands) do update(command) end
-  update(legacy and legacy.command or 0)
-end
-
-function M.remember_legacy_talk(command)
-  if type(command)=="number" and command>0 then put("legacy_talk",{command=command}) end
 end
 local function fresh(time,lifetime)
   local age=type(time)=="number" and reaper.time_precise()-time
@@ -47,13 +40,11 @@ function M.register(dir)
   local talk=reaper.AddRemoveReaScript(true,0,dir.."/HeyComputer - Talk or stop and send.lua",false)
   local send=reaper.AddRemoveReaScript(true,0,dir.."/HeyComputer - Send.lua",true)
   talk_commands={talk}
-  -- Existing toolbars can still use the old registered path/name. Discover
-  -- those actions before the first press, including after a REAPER restart.
-  -- Only update their indicators; do not run or re-register the actions.
+  -- The same script can be registered under another path. Discover those
+  -- actions so their toolbar indicators stay in sync; never run or re-register them.
   if reaper.kbd_enumerateActions and reaper.SectionFromUniqueID then
     local main=reaper.SectionFromUniqueID(0)
-    local names={['script: heycomputer - talk or stop and send.lua']=true,
-      ['script: reajev - talk or stop and send.lua']=true}
+    local names={['script: heycomputer - talk or stop and send.lua']=true}
     for i=0,100000 do
       local command,name=reaper.kbd_enumerateActions(main,i)
       if not command or command==0 then break end

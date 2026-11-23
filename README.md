@@ -57,24 +57,18 @@ sh scripts/setup.sh
 4. Select a microphone device and its **one-based input channel**, then save.
    This device is independent of REAPER’s track recording input. macOS may ask
    for microphone access when recording starts.
+5. If you saved an API key, macOS shows “Python wants to use your confidential
+   information stored in ‘HeyComputer’ in your keychain.” Enter your Mac login
+   password and click **Always Allow**. **Allow** only covers that one time, so the
+   prompt returns on every launch. macOS ties the permission to the exact Python
+   program, so expect the prompt once more after Python itself is updated.
+
+On Apple Silicon, new installs start listening for the wake phrase as soon as the
+panel opens, because the whole voice path runs on your Mac. Turn it off under
+**Settings → Voice input** if you prefer push-to-talk.
 
 Re-running the action after closing it loads source updates. REAPER actions refer
 to this checkout, so keep it at its installed path (or retain a folder alias).
-
-### Updating from ReaJev
-
-The project is now **HeyComputer**. Load `reaper/HeyComputer.lua` for the new
-name. The old `ReaJev` entry scripts remain compatibility launchers, so existing
-keyboard shortcuts and toolbar buttons continue to work. Use the new
-**HeyComputer** actions for new bindings. When renaming an existing checkout,
-keep a `ReaJev` folder alias pointing to `HeyComputer` for previously registered
-paths and the existing Python environment.
-
-The first launch imports settings, microphone selection and UI memory
-from `Data/ReaJev` into `Data/HeyComputer` without replacing existing
-HeyComputer data or replaying old requests. Saved API keys under the old Keychain
-service remain readable; newly saved keys use `HeyComputer`. The dock position
-is preserved.
 
 ## API connections
 
@@ -195,14 +189,15 @@ speech; the full response remains in the conversation.
 
 `sh scripts/setup.sh` already installs what this needs: the `sherpa-onnx` and
 `sentencepiece` dependencies and a checksum-verified English keyword model from the
-upstream project. The feature stays off until you enable it.
+upstream project. New installs on Apple Silicon have it switched on; elsewhere, and on
+existing installs, it stays off until you enable it.
 Only about 5.5 MB of model files are retained under REAPER's
 `Data/HeyComputer/models/kws-en`; model files are not part of this repository.
 For a portable/nonstandard resource folder, pass `--runtime /path/to/Data/HeyComputer`.
 Reopen the panel after installation.
 
-In **Settings → Voice input → Wake & stop words**, enable **Listen for a wake word** and
-save. The defaults are **hey computer** to start Talk and **execute** to stop and
+In **Settings → Voice input → Wake & stop words**, **Listen for a wake word** switches it
+on or off; save to apply. The defaults are **hey computer** to start Talk and **execute** to stop and
 send. Both phrases are editable (English, up to six words); use a stop phrase you
 will not normally say inside a command, such as “send it.” Wait for **Listening…**
 after waking, then speak your command. The stop phrase also works for recordings
@@ -267,9 +262,8 @@ Repeated presses during startup do not open duplicate panels. Send is disabled
 during recording; Talk stops and sends that recording instead.
 
 The Talk toolbar button follows the confirmed microphone recording state,
-including recordings started by the wake phrase or panel. Existing
-ReaJev Talk buttons are discovered when the panel opens, so they also light up
-without being clicked first. Stopping, cancelling or closing the panel clears
+including recordings started by the wake phrase or panel. Stopping, cancelling or
+closing the panel clears
 the indicator.
 
 If automatic registration fails, use **New action → Load ReaScript** and select

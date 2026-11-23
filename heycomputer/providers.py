@@ -23,9 +23,7 @@ def api_key(provider):
         return value
     try:
         import keyring
-        # Existing installations keep working without re-entering their keys.
-        return (keyring.get_password("HeyComputer", provider)
-                or keyring.get_password("ReaJev", provider) or "")
+        return keyring.get_password("HeyComputer", provider) or ""
     except Exception:
         return ""
 

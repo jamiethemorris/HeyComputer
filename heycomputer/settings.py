@@ -26,16 +26,18 @@ PRESETS = {
     },
 }
 KEY_PROVIDERS = ("openrouter", "typesafe", "openai")
+# Apple Silicon can run the whole voice path locally (wake words plus Whisper), so
+# hands-free use is on from the first launch there. Detection is local sherpa-onnx.
+APPLE_SILICON = sys.platform == "darwin" and platform.machine() == "arm64"
 DEFAULTS = {"use_jev": False, "allow_lua": False, "mic_device": "", "mic_channel": 1, "aliases": "", "speech_corrections": "",
             "reaper_mcp_enabled": False,
             "vision_enabled": False, "ui_memory_enabled": True,
-            "wake_enabled": False, "wake_phrase": "hey computer", "wake_stop_phrase": "execute",
+            "wake_enabled": APPLE_SILICON, "wake_phrase": "hey computer", "wake_stop_phrase": "execute",
             "wake_threshold": 0.35, "wake_log_enabled": True,
             "speech_enabled": False, "speech_voice": "", "speech_device": "",
             "speech_channel": 1, "speech_channels": 2, "speech_volume": .2}
 # New installs: conversation through the ChatGPT account, which cannot transcribe,
 # so Talk uses local Whisper where it can run. Everything else is OpenRouter.
-APPLE_SILICON = sys.platform == "darwin" and platform.machine() == "arm64"
 NEW_INSTALL_PROVIDER = {"fallback": "chatgpt", "transcription": "mlx_whisper" if APPLE_SILICON else "openrouter"}
 for service, presets in PRESETS.items():
     provider = NEW_INSTALL_PROVIDER.get(service, "openrouter")
@@ -61,6 +63,8 @@ def load_config(saved=None):
             config[service + "_provider"] = provider
             for field, value in PRESETS[service][provider].items():
                 config[service + "_" + field] = value
+    # Listening is only switched on for new installs, never for a saved file that predates the key.
+    config["wake_enabled"] = False
     config.update({k: v for k, v in saved.items() if k in DEFAULTS})
     config["reaper_mcp_enabled"] = config["reaper_mcp_enabled"] is True
     if config["fallback_provider"] == "chatgpt":

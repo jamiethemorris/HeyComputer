@@ -38,6 +38,10 @@ class ChatGPTSettingsTests(unittest.TestCase):
         from heycomputer.settings import APPLE_SILICON
         expected = "mlx_whisper" if APPLE_SILICON else "openrouter"
         self.assertEqual(service_config(config, "transcription")[0], expected)
+        # Hands-free is on where the whole voice path is local, but never switched on for a saved install.
+        self.assertIs(config["wake_enabled"], APPLE_SILICON)
+        self.assertIs(load_config({"fallback_provider": "chatgpt"})["wake_enabled"], False)
+        self.assertIs(load_config({"wake_enabled": True})["wake_enabled"], True)
         # A settings file with no provider keys is an old install and keeps its direct routes.
         self.assertEqual(load_config({})["fallback_provider"], "openai")
 

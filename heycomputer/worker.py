@@ -12,7 +12,6 @@ from . import settings
 from .protocol import PlanError, validate_result
 from .settings import DEFAULTS, PRESETS, KEY_PROVIDERS, load_config, service_config
 from .speech import correction_pairs, correct_text
-from .migration import import_legacy_settings
 from .audio import Recorder
 from .wake import ActivationLog, WakeListener, phrases, strip_stop_phrase
 from .voice_output import VoiceOutput, validate as validate_voice, FIELDS as VOICE_FIELDS
@@ -50,7 +49,6 @@ class Worker:
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(directory, 0o700)
         os.chmod(directory.parent, 0o700)
-        import_legacy_settings(directory.parent)
         self.config_path = directory.parent / "settings.json"
         self.config = dict(DEFAULTS)
         if self.config_path.exists():

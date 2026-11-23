@@ -692,7 +692,6 @@ local function command_view()
 end
 
 local dock=tonumber(R.GetExtState("HeyComputer","dock"))
-if not dock then dock=tonumber(R.GetExtState("ReaJev","dock")) end
 local first=true
 local function check_helper()
   if S.disconnected or not Runtime.available(S.ready,function(name) return read(inbox.."/"..name) end) then

@@ -314,12 +314,12 @@ class MacPolicyTests(unittest.TestCase):
         with self.assertRaises(PlanError):
             b.approve_host(3, True)
 
-    def test_assistant_windows_are_excluded_under_both_product_names(self):
+    def test_assistant_window_is_excluded(self):
         b = self.backend()
         rows = b._rows()
         rows += [{'id': 4 + i, 'pid': 101, 'title': title,
                   'bounds': dict(X=0, Y=0, Width=800, Height=600)}
-                 for i, title in enumerate(('HeyComputer', 'ReaJev'))]
+                 for i, title in enumerate(('HeyComputer',))]
         b._rows = lambda: rows
         self.assertEqual([w.id for w in b.windows()], [1])
 

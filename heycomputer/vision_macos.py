@@ -106,7 +106,7 @@ class MacDesktop:
             if min(bounds[2:]) < 40 or row.get(self.Q.kCGWindowAlpha, 1) <= 0:
                 continue
             title = str(row.get(self.Q.kCGWindowName, ""))[:300]
-            if title in ("HeyComputer", "ReaJev"):
+            if title == "HeyComputer":
                 continue
             window = Window(wid, pid, title, bounds, identity, host)
             # Floating REAPER dialogs can use elevated window levels. Accept
