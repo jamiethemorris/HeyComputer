@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from heycomputer.mcp_loop import run_loop
+from heycomputer.mcp_catalog import allowed_specs, select_tools, BLOCKED
 from heycomputer.protocol import PlanError
 
 # FastMCP Tool.from_function parameters from the 0.8.3 wheel's annotated
@@ -76,11 +77,11 @@ class LoopTests(unittest.TestCase):
         self.assertIs(feedback['write']['verified']['mute'], True)
 
     def test_routing_intent_uses_discovered_constraints(self):
-        from heycomputer.mcp_loop import catalog
         schema = dict(SCHEMAS['send_get_all'], properties={'track_index': {'type': 'integer', 'maximum': 7}})
         entries = self.client.list_tools() + [dict(name='send_get_all', inputSchema=schema)]
-        self.assertNotIn('send_get_all', catalog(entries, 'mute the kick'))
-        tools = catalog(entries, 'inspect the sends')
+        specs = allowed_specs(entries)
+        self.assertNotIn('send_get_all', select_tools(specs, 'mute the kick'))
+        tools = select_tools(specs, 'inspect the sends')
         self.assertEqual(tools['send_get_all']['parameters']['properties']['track_index']['maximum'], 7)
 
     def test_unavailable_or_unsafe_calls_never_reach_client(self):
@@ -255,18 +256,49 @@ class LoopTests(unittest.TestCase):
         self.assertFalse(self.client.calls)
 
     def test_disjoint_catalogs_and_companion_is_opt_in(self):
-        from heycomputer.mcp_loop import catalog
         self.client.names = tuple(SCHEMAS) + ('fx_scan_params','project_undo','script_run','hc_copy_fx')
-        entries = self.client.list_tools()
-        self.assertNotIn('hc_copy_fx',catalog(entries,'copy an FX'))
-        route = catalog(entries,'inspect the sends',True)
+        specs = allowed_specs(self.client.list_tools())
+        self.assertNotIn('hc_copy_fx',select_tools(specs,'copy an FX'))
+        route = select_tools(specs,'inspect the sends',True)
         self.assertIn('hc_send_create',route); self.assertNotIn('fx_get_params',route)
-        fx = catalog(entries,'inspect FX settings',True)
+        fx = select_tools(specs,'inspect FX settings',True)
         self.assertIn('hc_inspect_fx',fx); self.assertNotIn('send_get_all',fx)
-        env = catalog(entries,'fade track volume',True)
+        env = select_tools(specs,'fade track volume',True)
         self.assertIn('envelope_get_points',env); self.assertIn('hc_automation_points',env)
         for tools in (route,fx,env):
             self.assertFalse({'fx_scan_params','project_undo','script_run'} & tools.keys())
+
+    def test_lookup_never_grants_blocked_or_unknown_names(self):
+        self.client.names = tuple(SCHEMAS) + ('invented_operation',)
+        for forbidden in (*BLOCKED, 'invented_operation'):
+            for calls in ([call(forbidden, 'direct')],
+                          [call('lookup_reaper_tool', 'lookup', name=forbidden)],
+                          [call('lookup_reaper_tool', 'lookup', name='item_get_info'), call(forbidden, 'after')]):
+                with self.subTest(name=forbidden), self.assertRaisesRegex(PlanError, 'not allowed'):
+                    self.loop(*([c] for c in calls))
+        self.assertFalse(self.client.calls)
+
+    def test_looked_up_edit_shares_the_session_edit_budget(self):
+        from heycomputer.mcp_loop import MAX_EDITS
+        edits = [[call('track_set_mute', str(i), track_index=0, mute=i % 2 == 0)] for i in range(MAX_EDITS + 1)]
+        with self.assertRaisesRegex(PlanError, 'Edit limit'):
+            self.loop([self.inspect], [call('lookup_reaper_tool', 'lookup', name='track_set_mute')],
+                      *edits, text='Inspect MIDI notes')
+        self.assertNotIn('track_set_mute', {t['name'] for t in self.turns[0][1]})
+        self.assertEqual(sum(n == 'track_set_mute' for n, _ in self.client.calls), MAX_EDITS)
+
+    def test_final_message_cannot_confirm_receipt_only_edit(self):
+        from test_mcp_session_edits import Fake
+        fake = Fake()
+        self.client.names = tuple(SCHEMAS)
+        self.client.call = fake.call
+        answer = self.loop([call('item_get_info', 'inspect', item_index=0)],
+                           [call('item_delete', 'remove', item_index=0)],
+                           [message('Deleted the item.')], text='Delete the item')
+        self.assertIn('item_delete', fake.calls)
+        self.assertNotIn('Deleted the item.', answer)
+        self.assertIn('not independently verified', answer)
+        self.assertIn('item_delete', answer)
 
     def test_grouped_pipeline_is_dispatched_once_and_read_back(self):
         self.client.names = tuple(SCHEMAS)

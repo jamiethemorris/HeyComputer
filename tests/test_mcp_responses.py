@@ -6,8 +6,10 @@ from email.message import Message
 from unittest.mock import Mock, patch
 
 from heycomputer import mcp_responses, providers
+from heycomputer.mcp_loop import run_loop
 from heycomputer.mcp_responses import make_turn
 from heycomputer.protocol import PlanError
+from test_mcp_loop import Client, SCHEMAS, call, message
 
 
 KEY = "synthetic-key-for-responses-fixture"
@@ -235,3 +237,60 @@ class ChatGPTTurnTests(unittest.TestCase):
             turn("", INPUT, TOOLS, 10)
         self.key.assert_not_called()
         self.connect.assert_not_called()
+
+
+class LookupTurnTests(unittest.TestCase):
+    def test_local_lookup_offers_full_definition_on_next_turn_for_all_providers(self):
+        name = "tempo_list_markers"
+        description = "Read the project's tempo markers and time signatures."
+        schema = SCHEMAS[name]
+        definition = {"type": "function", "name": name, "description": description,
+                      "strict": False, "parameters": dict(schema, additionalProperties=False)}
+        lookup = call("lookup_reaper_tool", "lookup-1", name=name)
+        read = call(name, "read-1")
+        readback = {"markers": [], "count": 0}
+        reply = "No tempo markers."
+        responses = [completed([item]) for item in (lookup, read, message(reply))]
+
+        for provider in ("openai", "openrouter", "chatgpt"):
+            with self.subTest(provider=provider):
+                client = Client()
+                discovered = client.list_tools() + [dict(name=name, description=description, inputSchema=schema)]
+                with (inline_provider(), patch.object(providers, "api_key", return_value=KEY) as key,
+                      patch("urllib.request.build_opener") as build,
+                      patch("http.client.HTTPSConnection") as connect,
+                      patch.object(client, "list_tools", return_value=discovered),
+                      patch.object(client, "call", return_value=readback) as rpc):
+                    connection = connect.return_value
+                    open_response = build.return_value.open
+                    if provider == "chatgpt":
+                        connection.getresponse.side_effect = [
+                            StreamResponse(event("response.completed", response=response)) for response in responses]
+                    else:
+                        open_response.side_effect = [io.BytesIO(json.dumps(response).encode()) for response in responses]
+                    check = lambda: None
+                    turn = make_turn({"fallback_provider": provider}, check, access_token=KEY)
+                    self.assertEqual(run_loop(client, turn, "Inspect the tracks", {}, check, lambda: 10), reply)
+                    rpc.assert_called_once_with(name, {})
+
+                if provider == "chatgpt":
+                    key.assert_not_called()
+                    payloads = [json.loads(req.kwargs["body"]) for req in connection.request.call_args_list]
+                else:
+                    key.assert_called_with(provider)
+                    payloads = [json.loads(req.args[0].data) for req in open_response.call_args_list]
+                first, second, third = payloads
+                initial_names = {tool["name"] for tool in first["tools"]}
+                self.assertIn("lookup_reaper_tool", initial_names)
+                self.assertNotIn(name, initial_names)
+                self.assertIn(definition, second["tools"])
+                replayed_lookup, lookup_output = second["input"][-2:]
+                self.assertEqual(replayed_lookup, lookup)
+                self.assertEqual((lookup_output["type"], lookup_output["call_id"]), ("function_call_output", "lookup-1"))
+                feedback = json.loads(lookup_output["output"])
+                self.assertIsInstance(feedback, dict)
+                self.assertIn(definition, (feedback, *feedback.values()))
+                replayed_read, read_output = third["input"][-2:]
+                self.assertEqual(replayed_read, read)
+                self.assertEqual(read_output["call_id"], "read-1")
+                self.assertEqual(json.loads(read_output["output"]), readback)

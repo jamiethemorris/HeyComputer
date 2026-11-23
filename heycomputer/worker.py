@@ -22,13 +22,30 @@ MCP_INTENT = re.compile(r'\b(tracks?|project|markers?|transport|selection|routin
 PLUGIN_INTENT = re.compile(
     r'\b(fx|effects?|plug-?ins?|vst3?|presets?|eq|pro[- ]?q|shelf|bands?|filter|cutoff|hertz|k?hz|decay|'
     r'reverb|compressor|threshold|parameters?|knobs?)\b', re.I)
-LEGACY_INTENT = re.compile(r'\b(open|show window|gui|visual|click|drag|midi|items?|scripts?|actions?|explain|how (?:do|can|should) i)\b', re.I)
+LEGACY_INTENT = re.compile(
+    r'\b(open|show window|gui|visual|click|drag|midi editor|scripts?|actions?|explain|how (?:do|can|should) i)\b', re.I)
+MCP_EDITING_INTENT = re.compile(
+    r"\b(?:(?:(?:set|change|list|get|read|show) (?:the |our )?|what(?: is|'s) (?:the |our ))"
+    r'(?:current )?(?:tempo|bpm|time signatures?)|'
+    r'(?:count|list|show|get|read|insert|add|create|delete|move|edit|set|how many) '
+    r'(?:(?:the|all|selected|a|an) )*midi (?:items?|clips?|notes?|takes?|events?|cc|channels?|tracks?)|'
+    r'(?:in|on|from) (?:the |this |my )?(?:selected |current )?midi (?:item|clip|take|track)|'
+    r'(?:quantize|transpose|humanize) (?:the )?(?:selected )?(?:midi|notes?)|'
+    r'(?:media|audio|selected) items?|'
+    r'(?:split|trim|duplicate|resize|delete) (?:the |an? )?'
+    r'(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|\d+(?:st|nd|rd|th)) )?'
+    r'item (?:on|from) (?:the )?track|'
+    r'(?:add|create|list|rename|delete|move) (?:the |an? |all )?regions?)\b', re.I)
 MCP_REQUEST_SECONDS = 120  # Leave time for cleanup and IPC before the panel's 150s timeout.
 
 
 def mcp_intent(text):
     from .mcp_catalog import families
     if LEGACY_INTENT.search(text):
+        return False
+    if MCP_EDITING_INTENT.search(text) and not PLUGIN_INTENT.search(text):
+        return True
+    if re.search(r'\b(midi|items?)\b', text, re.I):
         return False
     # Return/send and envelope workflows can now inspect and set native FX in
     # the same loop. Standalone plugin setup still uses the existing planner.

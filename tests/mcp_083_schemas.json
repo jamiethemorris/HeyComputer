@@ -1,26 +1,3205 @@
 {
-  "envelope_get_points": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "envelope_name": {"default": "Volume", "title": "Envelope Name", "type": "string"}, "fx_index": {"default": -1, "title": "Fx Index", "type": "integer"}, "param_index": {"default": -1, "title": "Param Index", "type": "integer"}, "max_results": {"default": 2000, "title": "Max Results", "type": "integer"}}, "required": ["track_index"], "title": "envelope_get_pointsArguments", "type": "object"},
-  "fx_disable": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "fx_index": {"title": "Fx Index", "type": "integer"}}, "required": ["track_index", "fx_index"], "title": "fx_disableArguments", "type": "object"},
-  "fx_enable": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "fx_index": {"title": "Fx Index", "type": "integer"}}, "required": ["track_index", "fx_index"], "title": "fx_enableArguments", "type": "object"},
-  "fx_get_chain": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}}, "required": ["track_index"], "title": "fx_get_chainArguments", "type": "object"},
-  "fx_get_params": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "fx_index": {"title": "Fx Index", "type": "integer"}, "max_results": {"default": 300, "title": "Max Results", "type": "integer"}}, "required": ["track_index", "fx_index"], "title": "fx_get_paramsArguments", "type": "object"},
-  "marker_get_all": {"properties": {"max_results": {"default": 500, "title": "Max Results", "type": "integer"}}, "title": "marker_get_allArguments", "type": "object"},
-  "project_get_info": {"properties": {}, "title": "project_get_infoArguments", "type": "object"},
-  "project_get_overview": {"properties": {}, "title": "project_get_overviewArguments", "type": "object"},
-  "selection_get_time": {"properties": {}, "title": "selection_get_timeArguments", "type": "object"},
-  "send_get_all": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}}, "required": ["track_index"], "title": "send_get_allArguments", "type": "object"},
-  "send_get_routing_diagram": {"properties": {}, "title": "send_get_routing_diagramArguments", "type": "object"},
-  "send_set_mute": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "send_index": {"title": "Send Index", "type": "integer"}, "mute": {"title": "Mute", "type": "boolean"}}, "required": ["track_index", "send_index", "mute"], "title": "send_set_muteArguments", "type": "object"},
-  "send_set_pan": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "send_index": {"title": "Send Index", "type": "integer"}, "pan": {"title": "Pan", "type": "number"}}, "required": ["track_index", "send_index", "pan"], "title": "send_set_panArguments", "type": "object"},
-  "send_set_volume": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "send_index": {"title": "Send Index", "type": "integer"}, "volume_db": {"title": "Volume Db", "type": "number"}}, "required": ["track_index", "send_index", "volume_db"], "title": "send_set_volumeArguments", "type": "object"},
-  "setup_parallel_compression": {"properties": {"source_tracks": {"title": "Source Tracks", "type": "string"}, "bus_name": {"default": "BUS: Parallel Comp", "title": "Bus Name", "type": "string"}, "send_db": {"default": 0.0, "title": "Send Db", "type": "number"}, "return_db": {"default": -8.0, "title": "Return Db", "type": "number"}, "threshold_db": {"default": -24.0, "title": "Threshold Db", "type": "number"}, "ratio": {"default": 10.0, "title": "Ratio", "type": "number"}, "attack_ms": {"default": 1.0, "title": "Attack Ms", "type": "number"}, "release_ms": {"default": 100.0, "title": "Release Ms", "type": "number"}}, "required": ["source_tracks"], "title": "setup_parallel_compressionArguments", "type": "object"},
-  "track_create": {"properties": {"index": {"default": -1, "title": "Index", "type": "integer"}, "name": {"default": "", "title": "Name", "type": "string"}}, "title": "track_createArguments", "type": "object"},
-  "track_get_all": {"properties": {}, "title": "track_get_allArguments", "type": "object"},
-  "track_get_info": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}}, "required": ["track_index"], "title": "track_get_infoArguments", "type": "object"},
-  "track_rename": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "name": {"title": "Name", "type": "string"}}, "required": ["track_index", "name"], "title": "track_renameArguments", "type": "object"},
-  "track_set_mute": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "mute": {"title": "Mute", "type": "boolean"}}, "required": ["track_index", "mute"], "title": "track_set_muteArguments", "type": "object"},
-  "track_set_pan": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "pan": {"title": "Pan", "type": "number"}}, "required": ["track_index", "pan"], "title": "track_set_panArguments", "type": "object"},
-  "track_set_solo": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "solo": {"title": "Solo", "type": "boolean"}}, "required": ["track_index", "solo"], "title": "track_set_soloArguments", "type": "object"},
-  "track_set_volume": {"properties": {"track_index": {"title": "Track Index", "type": "integer"}, "volume_db": {"title": "Volume Db", "type": "number"}}, "required": ["track_index", "volume_db"], "title": "track_set_volumeArguments", "type": "object"},
-  "transport_get_state": {"properties": {}, "title": "transport_get_stateArguments", "type": "object"}
+  "add_markers_batch": {
+    "properties": {
+      "markers": {
+        "title": "Markers",
+        "type": "string"
+      }
+    },
+    "required": [
+      "markers"
+    ],
+    "title": "add_markers_batchArguments",
+    "type": "object"
+  },
+  "analyze_chop_set": {
+    "properties": {
+      "item_indices": {
+        "title": "Item Indices",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item_indices"
+    ],
+    "title": "analyze_chop_setArguments",
+    "type": "object"
+  },
+  "analyze_score": {
+    "properties": {
+      "end_time": {
+        "default": -1.0,
+        "title": "End Time",
+        "type": "number"
+      },
+      "start_time": {
+        "default": 0.0,
+        "title": "Start Time",
+        "type": "number"
+      },
+      "tracks": {
+        "default": "all",
+        "title": "Tracks",
+        "type": "string"
+      }
+    },
+    "title": "analyze_scoreArguments",
+    "type": "object"
+  },
+  "arrange_chops_to_chord_tones": {
+    "properties": {
+      "beats_per_chord": {
+        "default": 4,
+        "title": "Beats Per Chord",
+        "type": "integer"
+      },
+      "bpm": {
+        "default": 0.0,
+        "title": "Bpm",
+        "type": "number"
+      },
+      "chord_progression": {
+        "title": "Chord Progression",
+        "type": "string"
+      },
+      "item_indices": {
+        "title": "Item Indices",
+        "type": "string"
+      },
+      "layout": {
+        "default": "follow",
+        "title": "Layout",
+        "type": "string"
+      },
+      "source_root": {
+        "default": "C",
+        "title": "Source Root",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item_indices",
+      "chord_progression"
+    ],
+    "title": "arrange_chops_to_chord_tonesArguments",
+    "type": "object"
+  },
+  "bounce_stems": {
+    "properties": {
+      "format": {
+        "default": "wav",
+        "title": "Format",
+        "type": "string"
+      },
+      "output_dir": {
+        "default": "",
+        "title": "Output Dir",
+        "type": "string"
+      },
+      "track_indices": {
+        "title": "Track Indices",
+        "type": "string"
+      }
+    },
+    "required": [
+      "track_indices"
+    ],
+    "title": "bounce_stemsArguments",
+    "type": "object"
+  },
+  "chop_pipeline": {
+    "properties": {
+      "bars": {
+        "default": 4,
+        "title": "Bars",
+        "type": "integer"
+      },
+      "bpm": {
+        "default": 0.0,
+        "title": "Bpm",
+        "type": "number"
+      },
+      "chord_progression": {
+        "default": "",
+        "title": "Chord Progression",
+        "type": "string"
+      },
+      "mode": {
+        "default": "slice-preserve",
+        "title": "Mode",
+        "type": "string"
+      },
+      "mute_original": {
+        "default": true,
+        "title": "Mute Original",
+        "type": "boolean"
+      },
+      "seed": {
+        "default": 0,
+        "title": "Seed",
+        "type": "integer"
+      },
+      "source_key": {
+        "default": "C",
+        "title": "Source Key",
+        "type": "string"
+      },
+      "style": {
+        "default": "future_bass",
+        "title": "Style",
+        "type": "string"
+      },
+      "target_key": {
+        "default": "",
+        "title": "Target Key",
+        "type": "string"
+      },
+      "target_track_name": {
+        "default": "Vocal Chops",
+        "title": "Target Track Name",
+        "type": "string"
+      },
+      "vocal_item_index": {
+        "title": "Vocal Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "vocal_item_index"
+    ],
+    "title": "chop_pipelineArguments",
+    "type": "object"
+  },
+  "compose_arrangement": {
+    "properties": {
+      "clear_existing": {
+        "default": false,
+        "title": "Clear Existing",
+        "type": "boolean"
+      },
+      "tracks": {
+        "title": "Tracks",
+        "type": "string"
+      }
+    },
+    "required": [
+      "tracks"
+    ],
+    "title": "compose_arrangementArguments",
+    "type": "object"
+  },
+  "configure_tracks": {
+    "properties": {
+      "tracks": {
+        "title": "Tracks",
+        "type": "string"
+      }
+    },
+    "required": [
+      "tracks"
+    ],
+    "title": "configure_tracksArguments",
+    "type": "object"
+  },
+  "create_chord_progression": {
+    "properties": {
+      "base_octave": {
+        "default": 4,
+        "title": "Base Octave",
+        "type": "integer"
+      },
+      "channel": {
+        "default": 0,
+        "title": "Channel",
+        "type": "integer"
+      },
+      "chord_duration_qn": {
+        "default": 4.0,
+        "title": "Chord Duration Qn",
+        "type": "number"
+      },
+      "chords": {
+        "title": "Chords",
+        "type": "string"
+      },
+      "item_index": {
+        "default": -1,
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "start_qn": {
+        "default": 0.0,
+        "title": "Start Qn",
+        "type": "number"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      },
+      "velocity": {
+        "default": 96,
+        "title": "Velocity",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "chords"
+    ],
+    "title": "create_chord_progressionArguments",
+    "type": "object"
+  },
+  "create_drum_pattern": {
+    "properties": {
+      "bar_count": {
+        "default": 1,
+        "title": "Bar Count",
+        "type": "integer"
+      },
+      "channel": {
+        "default": 9,
+        "title": "Channel",
+        "type": "integer"
+      },
+      "item_index": {
+        "default": -1,
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "pattern": {
+        "title": "Pattern",
+        "type": "string"
+      },
+      "start_qn": {
+        "default": 0.0,
+        "title": "Start Qn",
+        "type": "number"
+      },
+      "steps_per_bar": {
+        "default": 16,
+        "title": "Steps Per Bar",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      },
+      "velocity": {
+        "default": 100,
+        "title": "Velocity",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "pattern"
+    ],
+    "title": "create_drum_patternArguments",
+    "type": "object"
+  },
+  "demo_edm_project": {
+    "properties": {
+      "bpm": {
+        "default": 140.0,
+        "title": "Bpm",
+        "type": "number"
+      },
+      "clean_first": {
+        "default": true,
+        "title": "Clean First",
+        "type": "boolean"
+      }
+    },
+    "title": "demo_edm_projectArguments",
+    "type": "object"
+  },
+  "detect_common_bpm": {
+    "properties": {
+      "file_paths": {
+        "title": "File Paths",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file_paths"
+    ],
+    "title": "detect_common_bpmArguments",
+    "type": "object"
+  },
+  "edit_section": {
+    "properties": {
+      "end_time": {
+        "title": "End Time",
+        "type": "number"
+      },
+      "mode": {
+        "default": "all",
+        "title": "Mode",
+        "type": "string"
+      },
+      "start_time": {
+        "title": "Start Time",
+        "type": "number"
+      },
+      "tracks": {
+        "title": "Tracks",
+        "type": "string"
+      },
+      "trim_item": {
+        "default": false,
+        "title": "Trim Item",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "tracks",
+      "start_time",
+      "end_time"
+    ],
+    "title": "edit_sectionArguments",
+    "type": "object"
+  },
+  "engine_fix_mix": {
+    "properties": {
+      "include_master": {
+        "default": true,
+        "title": "Include Master",
+        "type": "boolean"
+      },
+      "style": {
+        "default": "",
+        "title": "Style",
+        "type": "string"
+      }
+    },
+    "title": "engine_fix_mixArguments",
+    "type": "object"
+  },
+  "engine_master": {
+    "properties": {
+      "clean": {
+        "default": true,
+        "title": "Clean",
+        "type": "boolean"
+      },
+      "style": {
+        "title": "Style",
+        "type": "string"
+      }
+    },
+    "required": [
+      "style"
+    ],
+    "title": "engine_masterArguments",
+    "type": "object"
+  },
+  "engine_mix": {
+    "properties": {
+      "clean": {
+        "default": true,
+        "title": "Clean",
+        "type": "boolean"
+      },
+      "style": {
+        "default": "",
+        "title": "Style",
+        "type": "string"
+      }
+    },
+    "title": "engine_mixArguments",
+    "type": "object"
+  },
+  "envelope_add_points": {
+    "properties": {
+      "create": {
+        "default": true,
+        "title": "Create",
+        "type": "boolean"
+      },
+      "envelope_name": {
+        "default": "Volume",
+        "title": "Envelope Name",
+        "type": "string"
+      },
+      "fx_index": {
+        "default": -1,
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "param_index": {
+        "default": -1,
+        "title": "Param Index",
+        "type": "integer"
+      },
+      "points": {
+        "title": "Points",
+        "type": "string"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "points"
+    ],
+    "title": "envelope_add_pointsArguments",
+    "type": "object"
+  },
+  "envelope_clear_range": {
+    "properties": {
+      "end_time": {
+        "title": "End Time",
+        "type": "number"
+      },
+      "envelope_name": {
+        "default": "Volume",
+        "title": "Envelope Name",
+        "type": "string"
+      },
+      "fx_index": {
+        "default": -1,
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "param_index": {
+        "default": -1,
+        "title": "Param Index",
+        "type": "integer"
+      },
+      "start_time": {
+        "title": "Start Time",
+        "type": "number"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "start_time",
+      "end_time"
+    ],
+    "title": "envelope_clear_rangeArguments",
+    "type": "object"
+  },
+  "envelope_get_points": {
+    "properties": {
+      "envelope_name": {
+        "default": "Volume",
+        "title": "Envelope Name",
+        "type": "string"
+      },
+      "fx_index": {
+        "default": -1,
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "max_results": {
+        "default": 2000,
+        "title": "Max Results",
+        "type": "integer"
+      },
+      "param_index": {
+        "default": -1,
+        "title": "Param Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "envelope_get_pointsArguments",
+    "type": "object"
+  },
+  "fx_disable": {
+    "properties": {
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index"
+    ],
+    "title": "fx_disableArguments",
+    "type": "object"
+  },
+  "fx_enable": {
+    "properties": {
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index"
+    ],
+    "title": "fx_enableArguments",
+    "type": "object"
+  },
+  "fx_get_chain": {
+    "properties": {
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "fx_get_chainArguments",
+    "type": "object"
+  },
+  "fx_get_instrument": {
+    "properties": {
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "fx_get_instrumentArguments",
+    "type": "object"
+  },
+  "fx_get_params": {
+    "properties": {
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "max_results": {
+        "default": 300,
+        "title": "Max Results",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index"
+    ],
+    "title": "fx_get_paramsArguments",
+    "type": "object"
+  },
+  "fx_get_pin_mappings": {
+    "properties": {
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index"
+    ],
+    "title": "fx_get_pin_mappingsArguments",
+    "type": "object"
+  },
+  "fx_get_preset": {
+    "properties": {
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index"
+    ],
+    "title": "fx_get_presetArguments",
+    "type": "object"
+  },
+  "fx_list_installed": {
+    "properties": {
+      "category": {
+        "default": "",
+        "title": "Category",
+        "type": "string"
+      },
+      "full_list": {
+        "default": false,
+        "title": "Full List",
+        "type": "boolean"
+      }
+    },
+    "title": "fx_list_installedArguments",
+    "type": "object"
+  },
+  "fx_move": {
+    "properties": {
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "new_index": {
+        "title": "New Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index",
+      "new_index"
+    ],
+    "title": "fx_moveArguments",
+    "type": "object"
+  },
+  "fx_navigate_preset": {
+    "properties": {
+      "direction": {
+        "title": "Direction",
+        "type": "integer"
+      },
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index",
+      "direction"
+    ],
+    "title": "fx_navigate_presetArguments",
+    "type": "object"
+  },
+  "fx_remove_batch": {
+    "properties": {
+      "entries": {
+        "title": "Entries",
+        "type": "string"
+      }
+    },
+    "required": [
+      "entries"
+    ],
+    "title": "fx_remove_batchArguments",
+    "type": "object"
+  },
+  "fx_rename": {
+    "properties": {
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "new_name": {
+        "title": "New Name",
+        "type": "string"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index",
+      "new_name"
+    ],
+    "title": "fx_renameArguments",
+    "type": "object"
+  },
+  "fx_scan_params": {
+    "properties": {
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index"
+    ],
+    "title": "fx_scan_paramsArguments",
+    "type": "object"
+  },
+  "fx_set_preset": {
+    "properties": {
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "include_params": {
+        "default": false,
+        "title": "Include Params",
+        "type": "boolean"
+      },
+      "preset_name": {
+        "title": "Preset Name",
+        "type": "string"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index",
+      "preset_name"
+    ],
+    "title": "fx_set_presetArguments",
+    "type": "object"
+  },
+  "fx_show_ui": {
+    "properties": {
+      "fx_index": {
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "fx_index"
+    ],
+    "title": "fx_show_uiArguments",
+    "type": "object"
+  },
+  "get_track_instruments": {
+    "properties": {},
+    "title": "get_track_instrumentsArguments",
+    "type": "object"
+  },
+  "item_create_midi": {
+    "properties": {
+      "length": {
+        "default": 4.0,
+        "title": "Length",
+        "type": "number"
+      },
+      "position": {
+        "default": 0.0,
+        "title": "Position",
+        "type": "number"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "item_create_midiArguments",
+    "type": "object"
+  },
+  "item_delete": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "item_deleteArguments",
+    "type": "object"
+  },
+  "item_duplicate": {
+    "properties": {
+      "count": {
+        "title": "Count",
+        "type": "integer"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "spacing_sec": {
+        "default": 0.0,
+        "title": "Spacing Sec",
+        "type": "number"
+      }
+    },
+    "required": [
+      "item_index",
+      "count"
+    ],
+    "title": "item_duplicateArguments",
+    "type": "object"
+  },
+  "item_get_all": {
+    "properties": {
+      "max_results": {
+        "default": 200,
+        "title": "Max Results",
+        "type": "integer"
+      },
+      "track_index": {
+        "default": -1,
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "title": "item_get_allArguments",
+    "type": "object"
+  },
+  "item_get_info": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "item_get_infoArguments",
+    "type": "object"
+  },
+  "item_insert_media": {
+    "properties": {
+      "path": {
+        "title": "Path",
+        "type": "string"
+      },
+      "position": {
+        "default": 0.0,
+        "title": "Position",
+        "type": "number"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "path"
+    ],
+    "title": "item_insert_mediaArguments",
+    "type": "object"
+  },
+  "item_move": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "new_position": {
+        "title": "New Position",
+        "type": "number"
+      }
+    },
+    "required": [
+      "item_index",
+      "new_position"
+    ],
+    "title": "item_moveArguments",
+    "type": "object"
+  },
+  "item_move_to_track": {
+    "properties": {
+      "dest_track_index": {
+        "title": "Dest Track Index",
+        "type": "integer"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index",
+      "dest_track_index"
+    ],
+    "title": "item_move_to_trackArguments",
+    "type": "object"
+  },
+  "item_select": {
+    "properties": {
+      "exclusive": {
+        "default": false,
+        "title": "Exclusive",
+        "type": "boolean"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "selected": {
+        "default": true,
+        "title": "Selected",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "item_selectArguments",
+    "type": "object"
+  },
+  "item_set_fade": {
+    "properties": {
+      "fade_in": {
+        "default": -1,
+        "title": "Fade In",
+        "type": "number"
+      },
+      "fade_out": {
+        "default": -1,
+        "title": "Fade Out",
+        "type": "number"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "item_set_fadeArguments",
+    "type": "object"
+  },
+  "item_set_length": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "length": {
+        "title": "Length",
+        "type": "number"
+      }
+    },
+    "required": [
+      "item_index",
+      "length"
+    ],
+    "title": "item_set_lengthArguments",
+    "type": "object"
+  },
+  "item_set_mute": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "mute": {
+        "title": "Mute",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "item_index",
+      "mute"
+    ],
+    "title": "item_set_muteArguments",
+    "type": "object"
+  },
+  "item_set_volume": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "volume_db": {
+        "title": "Volume Db",
+        "type": "number"
+      }
+    },
+    "required": [
+      "item_index",
+      "volume_db"
+    ],
+    "title": "item_set_volumeArguments",
+    "type": "object"
+  },
+  "item_split": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "position": {
+        "title": "Position",
+        "type": "number"
+      }
+    },
+    "required": [
+      "item_index",
+      "position"
+    ],
+    "title": "item_splitArguments",
+    "type": "object"
+  },
+  "item_split_at_positions": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "positions": {
+        "title": "Positions",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item_index",
+      "positions"
+    ],
+    "title": "item_split_at_positionsArguments",
+    "type": "object"
+  },
+  "item_split_at_transients": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "item_split_at_transientsArguments",
+    "type": "object"
+  },
+  "item_take_add": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "item_take_addArguments",
+    "type": "object"
+  },
+  "item_take_delete_active": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "item_take_delete_activeArguments",
+    "type": "object"
+  },
+  "item_take_list": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "item_take_listArguments",
+    "type": "object"
+  },
+  "item_take_set_active": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "take_index": {
+        "title": "Take Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index",
+      "take_index"
+    ],
+    "title": "item_take_set_activeArguments",
+    "type": "object"
+  },
+  "items_apply": {
+    "properties": {
+      "entries": {
+        "title": "Entries",
+        "type": "string"
+      }
+    },
+    "required": [
+      "entries"
+    ],
+    "title": "items_applyArguments",
+    "type": "object"
+  },
+  "list_audio_subfolders": {
+    "properties": {
+      "max_depth": {
+        "default": 2,
+        "title": "Max Depth",
+        "type": "integer"
+      },
+      "path": {
+        "title": "Path",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path"
+    ],
+    "title": "list_audio_subfoldersArguments",
+    "type": "object"
+  },
+  "load_loops": {
+    "properties": {
+      "loops": {
+        "title": "Loops",
+        "type": "string"
+      },
+      "project_bpm": {
+        "default": 0.0,
+        "title": "Project Bpm",
+        "type": "number"
+      }
+    },
+    "required": [
+      "loops"
+    ],
+    "title": "load_loopsArguments",
+    "type": "object"
+  },
+  "marker_add": {
+    "properties": {
+      "color_b": {
+        "default": 0,
+        "title": "Color B",
+        "type": "integer"
+      },
+      "color_g": {
+        "default": 0,
+        "title": "Color G",
+        "type": "integer"
+      },
+      "color_r": {
+        "default": 0,
+        "title": "Color R",
+        "type": "integer"
+      },
+      "name": {
+        "default": "",
+        "title": "Name",
+        "type": "string"
+      },
+      "position": {
+        "title": "Position",
+        "type": "number"
+      }
+    },
+    "required": [
+      "position"
+    ],
+    "title": "marker_addArguments",
+    "type": "object"
+  },
+  "marker_add_region": {
+    "properties": {
+      "color_b": {
+        "default": 0,
+        "title": "Color B",
+        "type": "integer"
+      },
+      "color_g": {
+        "default": 0,
+        "title": "Color G",
+        "type": "integer"
+      },
+      "color_r": {
+        "default": 0,
+        "title": "Color R",
+        "type": "integer"
+      },
+      "end": {
+        "title": "End",
+        "type": "number"
+      },
+      "name": {
+        "default": "",
+        "title": "Name",
+        "type": "string"
+      },
+      "start": {
+        "title": "Start",
+        "type": "number"
+      }
+    },
+    "required": [
+      "start",
+      "end"
+    ],
+    "title": "marker_add_regionArguments",
+    "type": "object"
+  },
+  "marker_delete": {
+    "properties": {
+      "marker_index": {
+        "title": "Marker Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "marker_index"
+    ],
+    "title": "marker_deleteArguments",
+    "type": "object"
+  },
+  "marker_edit": {
+    "properties": {
+      "marker_index": {
+        "title": "Marker Index",
+        "type": "integer"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Name"
+      },
+      "position": {
+        "default": -1,
+        "title": "Position",
+        "type": "number"
+      }
+    },
+    "required": [
+      "marker_index"
+    ],
+    "title": "marker_editArguments",
+    "type": "object"
+  },
+  "marker_get_all": {
+    "properties": {
+      "max_results": {
+        "default": 500,
+        "title": "Max Results",
+        "type": "integer"
+      }
+    },
+    "title": "marker_get_allArguments",
+    "type": "object"
+  },
+  "marker_go_to": {
+    "properties": {
+      "marker_number": {
+        "title": "Marker Number",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "marker_number"
+    ],
+    "title": "marker_go_toArguments",
+    "type": "object"
+  },
+  "markers_apply": {
+    "properties": {
+      "entries": {
+        "title": "Entries",
+        "type": "string"
+      }
+    },
+    "required": [
+      "entries"
+    ],
+    "title": "markers_applyArguments",
+    "type": "object"
+  },
+  "midi_count_events": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "midi_count_eventsArguments",
+    "type": "object"
+  },
+  "midi_delete_all_notes": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "midi_delete_all_notesArguments",
+    "type": "object"
+  },
+  "midi_delete_cc": {
+    "properties": {
+      "cc_index": {
+        "title": "Cc Index",
+        "type": "integer"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index",
+      "cc_index"
+    ],
+    "title": "midi_delete_ccArguments",
+    "type": "object"
+  },
+  "midi_delete_note": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "note_index": {
+        "title": "Note Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index",
+      "note_index"
+    ],
+    "title": "midi_delete_noteArguments",
+    "type": "object"
+  },
+  "midi_get_note_names": {
+    "properties": {},
+    "title": "midi_get_note_namesArguments",
+    "type": "object"
+  },
+  "midi_get_notes": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "max_results": {
+        "default": 500,
+        "title": "Max Results",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "midi_get_notesArguments",
+    "type": "object"
+  },
+  "midi_humanize": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "timing_ms": {
+        "default": 15.0,
+        "title": "Timing Ms",
+        "type": "number"
+      },
+      "velocity_amount": {
+        "default": 8,
+        "title": "Velocity Amount",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "midi_humanizeArguments",
+    "type": "object"
+  },
+  "midi_insert_cc": {
+    "properties": {
+      "cc_number": {
+        "title": "Cc Number",
+        "type": "integer"
+      },
+      "cc_value": {
+        "title": "Cc Value",
+        "type": "integer"
+      },
+      "channel": {
+        "title": "Channel",
+        "type": "integer"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "position": {
+        "title": "Position",
+        "type": "number"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "item_index",
+      "channel",
+      "cc_number",
+      "cc_value",
+      "position"
+    ],
+    "title": "midi_insert_ccArguments",
+    "type": "object"
+  },
+  "midi_insert_note": {
+    "properties": {
+      "channel": {
+        "title": "Channel",
+        "type": "integer"
+      },
+      "end_position": {
+        "title": "End Position",
+        "type": "number"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "pitch": {
+        "title": "Pitch",
+        "type": "integer"
+      },
+      "start_position": {
+        "title": "Start Position",
+        "type": "number"
+      },
+      "velocity": {
+        "title": "Velocity",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index",
+      "channel",
+      "pitch",
+      "velocity",
+      "start_position",
+      "end_position"
+    ],
+    "title": "midi_insert_noteArguments",
+    "type": "object"
+  },
+  "midi_insert_notes_batch": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "notes": {
+        "title": "Notes",
+        "type": "string"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "item_index",
+      "notes"
+    ],
+    "title": "midi_insert_notes_batchArguments",
+    "type": "object"
+  },
+  "midi_insert_program_change": {
+    "properties": {
+      "bank_lsb": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Bank Lsb"
+      },
+      "bank_msb": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Bank Msb"
+      },
+      "channel": {
+        "title": "Channel",
+        "type": "integer"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "position": {
+        "title": "Position",
+        "type": "number"
+      },
+      "program": {
+        "title": "Program",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "item_index",
+      "channel",
+      "program",
+      "position"
+    ],
+    "title": "midi_insert_program_changeArguments",
+    "type": "object"
+  },
+  "midi_list_programs": {
+    "properties": {
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "midi_list_programsArguments",
+    "type": "object"
+  },
+  "midi_quantize": {
+    "properties": {
+      "grid_seconds": {
+        "title": "Grid Seconds",
+        "type": "number"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "strength": {
+        "default": 1.0,
+        "title": "Strength",
+        "type": "number"
+      }
+    },
+    "required": [
+      "item_index",
+      "grid_seconds"
+    ],
+    "title": "midi_quantizeArguments",
+    "type": "object"
+  },
+  "midi_select_notes": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "select_all": {
+        "default": true,
+        "title": "Select All",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "midi_select_notesArguments",
+    "type": "object"
+  },
+  "midi_set_item_extents": {
+    "properties": {
+      "end_qn": {
+        "title": "End Qn",
+        "type": "number"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "start_qn": {
+        "title": "Start Qn",
+        "type": "number"
+      }
+    },
+    "required": [
+      "item_index",
+      "start_qn",
+      "end_qn"
+    ],
+    "title": "midi_set_item_extentsArguments",
+    "type": "object"
+  },
+  "midi_set_note": {
+    "properties": {
+      "channel": {
+        "default": -1,
+        "title": "Channel",
+        "type": "integer"
+      },
+      "end_position": {
+        "default": -1,
+        "title": "End Position",
+        "type": "number"
+      },
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "note_index": {
+        "title": "Note Index",
+        "type": "integer"
+      },
+      "pitch": {
+        "default": -1,
+        "title": "Pitch",
+        "type": "integer"
+      },
+      "start_position": {
+        "default": -1,
+        "title": "Start Position",
+        "type": "number"
+      },
+      "velocity": {
+        "default": -1,
+        "title": "Velocity",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index",
+      "note_index"
+    ],
+    "title": "midi_set_noteArguments",
+    "type": "object"
+  },
+  "midi_sort": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "midi_sortArguments",
+    "type": "object"
+  },
+  "project_backup": {
+    "properties": {
+      "path": {
+        "title": "Path",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path"
+    ],
+    "title": "project_backupArguments",
+    "type": "object"
+  },
+  "project_export_audio": {
+    "properties": {
+      "format": {
+        "default": "wav",
+        "title": "Format",
+        "type": "string"
+      },
+      "path": {
+        "title": "Path",
+        "type": "string"
+      },
+      "pattern": {
+        "default": "",
+        "title": "Pattern",
+        "type": "string"
+      },
+      "source": {
+        "default": "master",
+        "title": "Source",
+        "type": "string"
+      },
+      "track_indices": {
+        "default": "",
+        "title": "Track Indices",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path"
+    ],
+    "title": "project_export_audioArguments",
+    "type": "object"
+  },
+  "project_get_change_count": {
+    "properties": {},
+    "title": "project_get_change_countArguments",
+    "type": "object"
+  },
+  "project_get_info": {
+    "properties": {},
+    "title": "project_get_infoArguments",
+    "type": "object"
+  },
+  "project_get_metadata": {
+    "properties": {},
+    "title": "project_get_metadataArguments",
+    "type": "object"
+  },
+  "project_get_notes": {
+    "properties": {},
+    "title": "project_get_notesArguments",
+    "type": "object"
+  },
+  "project_get_notes_info": {
+    "properties": {},
+    "title": "project_get_notes_infoArguments",
+    "type": "object"
+  },
+  "project_get_overview": {
+    "properties": {},
+    "title": "project_get_overviewArguments",
+    "type": "object"
+  },
+  "project_new": {
+    "properties": {},
+    "title": "project_newArguments",
+    "type": "object"
+  },
+  "project_open": {
+    "properties": {
+      "path": {
+        "title": "Path",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path"
+    ],
+    "title": "project_openArguments",
+    "type": "object"
+  },
+  "project_redo": {
+    "properties": {
+      "steps": {
+        "default": 1,
+        "title": "Steps",
+        "type": "integer"
+      }
+    },
+    "title": "project_redoArguments",
+    "type": "object"
+  },
+  "project_save": {
+    "properties": {},
+    "title": "project_saveArguments",
+    "type": "object"
+  },
+  "project_save_as": {
+    "properties": {
+      "path": {
+        "title": "Path",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path"
+    ],
+    "title": "project_save_asArguments",
+    "type": "object"
+  },
+  "project_set_grid": {
+    "properties": {
+      "grid_division": {
+        "title": "Grid Division",
+        "type": "number"
+      }
+    },
+    "required": [
+      "grid_division"
+    ],
+    "title": "project_set_gridArguments",
+    "type": "object"
+  },
+  "project_set_metadata": {
+    "properties": {
+      "album": {
+        "default": "",
+        "title": "Album",
+        "type": "string"
+      },
+      "author": {
+        "default": "",
+        "title": "Author",
+        "type": "string"
+      },
+      "comment": {
+        "default": "",
+        "title": "Comment",
+        "type": "string"
+      },
+      "composer": {
+        "default": "",
+        "title": "Composer",
+        "type": "string"
+      },
+      "copyright": {
+        "default": "",
+        "title": "Copyright",
+        "type": "string"
+      },
+      "genre": {
+        "default": "",
+        "title": "Genre",
+        "type": "string"
+      },
+      "isrc": {
+        "default": "",
+        "title": "Isrc",
+        "type": "string"
+      },
+      "title": {
+        "default": "",
+        "title": "Title",
+        "type": "string"
+      },
+      "track_number": {
+        "default": "",
+        "title": "Track Number",
+        "type": "string"
+      },
+      "year": {
+        "default": "",
+        "title": "Year",
+        "type": "string"
+      }
+    },
+    "title": "project_set_metadataArguments",
+    "type": "object"
+  },
+  "project_set_notes": {
+    "properties": {
+      "notes": {
+        "title": "Notes",
+        "type": "string"
+      }
+    },
+    "required": [
+      "notes"
+    ],
+    "title": "project_set_notesArguments",
+    "type": "object"
+  },
+  "project_set_notes_info": {
+    "properties": {
+      "author": {
+        "default": "",
+        "title": "Author",
+        "type": "string"
+      },
+      "title": {
+        "default": "",
+        "title": "Title",
+        "type": "string"
+      }
+    },
+    "title": "project_set_notes_infoArguments",
+    "type": "object"
+  },
+  "project_set_ripple_mode": {
+    "properties": {
+      "mode": {
+        "title": "Mode",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "mode"
+    ],
+    "title": "project_set_ripple_modeArguments",
+    "type": "object"
+  },
+  "project_undo": {
+    "properties": {
+      "steps": {
+        "default": 1,
+        "title": "Steps",
+        "type": "integer"
+      }
+    },
+    "title": "project_undoArguments",
+    "type": "object"
+  },
+  "project_undo_group": {
+    "properties": {},
+    "title": "project_undo_groupArguments",
+    "type": "object"
+  },
+  "reset_composition": {
+    "properties": {},
+    "title": "reset_compositionArguments",
+    "type": "object"
+  },
+  "rewrite_cc": {
+    "properties": {
+      "end_time": {
+        "title": "End Time",
+        "type": "number"
+      },
+      "start_time": {
+        "title": "Start Time",
+        "type": "number"
+      },
+      "tracks": {
+        "title": "Tracks",
+        "type": "string"
+      }
+    },
+    "required": [
+      "tracks",
+      "start_time",
+      "end_time"
+    ],
+    "title": "rewrite_ccArguments",
+    "type": "object"
+  },
+  "scan_audio_folder": {
+    "properties": {
+      "key": {
+        "default": "",
+        "title": "Key",
+        "type": "string"
+      },
+      "max_bpm": {
+        "default": 0,
+        "title": "Max Bpm",
+        "type": "integer"
+      },
+      "max_files": {
+        "default": 500,
+        "title": "Max Files",
+        "type": "integer"
+      },
+      "min_bpm": {
+        "default": 0,
+        "title": "Min Bpm",
+        "type": "integer"
+      },
+      "path": {
+        "title": "Path",
+        "type": "string"
+      },
+      "query": {
+        "default": "",
+        "title": "Query",
+        "type": "string"
+      },
+      "recursive": {
+        "default": true,
+        "title": "Recursive",
+        "type": "boolean"
+      },
+      "role": {
+        "default": "",
+        "title": "Role",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path"
+    ],
+    "title": "scan_audio_folderArguments",
+    "type": "object"
+  },
+  "script_list": {
+    "properties": {
+      "filter": {
+        "default": "",
+        "title": "Filter",
+        "type": "string"
+      }
+    },
+    "title": "script_listArguments",
+    "type": "object"
+  },
+  "script_run": {
+    "properties": {
+      "script_path": {
+        "title": "Script Path",
+        "type": "string"
+      },
+      "wait_seconds": {
+        "default": 5.0,
+        "title": "Wait Seconds",
+        "type": "number"
+      }
+    },
+    "required": [
+      "script_path"
+    ],
+    "title": "script_runArguments",
+    "type": "object"
+  },
+  "selection_deselect_all_items": {
+    "properties": {},
+    "title": "selection_deselect_all_itemsArguments",
+    "type": "object"
+  },
+  "selection_deselect_all_tracks": {
+    "properties": {},
+    "title": "selection_deselect_all_tracksArguments",
+    "type": "object"
+  },
+  "selection_get_selected_items": {
+    "properties": {},
+    "title": "selection_get_selected_itemsArguments",
+    "type": "object"
+  },
+  "selection_get_selected_tracks": {
+    "properties": {},
+    "title": "selection_get_selected_tracksArguments",
+    "type": "object"
+  },
+  "selection_get_time": {
+    "properties": {},
+    "title": "selection_get_timeArguments",
+    "type": "object"
+  },
+  "selection_select_all_items": {
+    "properties": {},
+    "title": "selection_select_all_itemsArguments",
+    "type": "object"
+  },
+  "selection_select_all_tracks": {
+    "properties": {},
+    "title": "selection_select_all_tracksArguments",
+    "type": "object"
+  },
+  "selection_set_loop": {
+    "properties": {
+      "end": {
+        "title": "End",
+        "type": "number"
+      },
+      "start": {
+        "title": "Start",
+        "type": "number"
+      }
+    },
+    "required": [
+      "start",
+      "end"
+    ],
+    "title": "selection_set_loopArguments",
+    "type": "object"
+  },
+  "selection_set_time": {
+    "properties": {
+      "end": {
+        "title": "End",
+        "type": "number"
+      },
+      "start": {
+        "title": "Start",
+        "type": "number"
+      }
+    },
+    "required": [
+      "start",
+      "end"
+    ],
+    "title": "selection_set_timeArguments",
+    "type": "object"
+  },
+  "send_create": {
+    "properties": {
+      "dest_track": {
+        "title": "Dest Track",
+        "type": "integer"
+      },
+      "midi_dest_channel": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Midi Dest Channel"
+      },
+      "midi_source_channel": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Midi Source Channel"
+      },
+      "source_track": {
+        "title": "Source Track",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "source_track",
+      "dest_track"
+    ],
+    "title": "send_createArguments",
+    "type": "object"
+  },
+  "send_get_all": {
+    "properties": {
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "send_get_allArguments",
+    "type": "object"
+  },
+  "send_get_routing_diagram": {
+    "properties": {},
+    "title": "send_get_routing_diagramArguments",
+    "type": "object"
+  },
+  "send_remove": {
+    "properties": {
+      "send_index": {
+        "title": "Send Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "send_index"
+    ],
+    "title": "send_removeArguments",
+    "type": "object"
+  },
+  "send_set_midi_channel": {
+    "properties": {
+      "midi_dest_channel": {
+        "title": "Midi Dest Channel",
+        "type": "integer"
+      },
+      "midi_source_channel": {
+        "title": "Midi Source Channel",
+        "type": "integer"
+      },
+      "send_index": {
+        "title": "Send Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "send_index",
+      "midi_source_channel",
+      "midi_dest_channel"
+    ],
+    "title": "send_set_midi_channelArguments",
+    "type": "object"
+  },
+  "send_set_mute": {
+    "properties": {
+      "mute": {
+        "title": "Mute",
+        "type": "boolean"
+      },
+      "send_index": {
+        "title": "Send Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "send_index",
+      "mute"
+    ],
+    "title": "send_set_muteArguments",
+    "type": "object"
+  },
+  "send_set_pan": {
+    "properties": {
+      "pan": {
+        "title": "Pan",
+        "type": "number"
+      },
+      "send_index": {
+        "title": "Send Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "send_index",
+      "pan"
+    ],
+    "title": "send_set_panArguments",
+    "type": "object"
+  },
+  "send_set_volume": {
+    "properties": {
+      "send_index": {
+        "title": "Send Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      },
+      "volume_db": {
+        "title": "Volume Db",
+        "type": "number"
+      }
+    },
+    "required": [
+      "track_index",
+      "send_index",
+      "volume_db"
+    ],
+    "title": "send_set_volumeArguments",
+    "type": "object"
+  },
+  "set_fx_preferences": {
+    "properties": {
+      "preferences": {
+        "title": "Preferences",
+        "type": "string"
+      }
+    },
+    "required": [
+      "preferences"
+    ],
+    "title": "set_fx_preferencesArguments",
+    "type": "object"
+  },
+  "setup_drum_bus": {
+    "properties": {
+      "bus_name": {
+        "default": "BUS: Drums",
+        "title": "Bus Name",
+        "type": "string"
+      },
+      "glue_ratio": {
+        "default": 2.0,
+        "title": "Glue Ratio",
+        "type": "number"
+      },
+      "glue_threshold_db": {
+        "default": -12.0,
+        "title": "Glue Threshold Db",
+        "type": "number"
+      },
+      "return_db": {
+        "default": 0.0,
+        "title": "Return Db",
+        "type": "number"
+      },
+      "source_tracks": {
+        "title": "Source Tracks",
+        "type": "string"
+      }
+    },
+    "required": [
+      "source_tracks"
+    ],
+    "title": "setup_drum_busArguments",
+    "type": "object"
+  },
+  "setup_effect_bus": {
+    "properties": {
+      "bus_color": {
+        "default": "",
+        "title": "Bus Color",
+        "type": "string"
+      },
+      "bus_name": {
+        "title": "Bus Name",
+        "type": "string"
+      },
+      "bus_position": {
+        "default": -1,
+        "title": "Bus Position",
+        "type": "integer"
+      },
+      "bus_volume_db": {
+        "default": 0.0,
+        "title": "Bus Volume Db",
+        "type": "number"
+      },
+      "fx_chain": {
+        "title": "Fx Chain",
+        "type": "string"
+      },
+      "sends_from": {
+        "title": "Sends From",
+        "type": "string"
+      }
+    },
+    "required": [
+      "bus_name",
+      "fx_chain",
+      "sends_from"
+    ],
+    "title": "setup_effect_busArguments",
+    "type": "object"
+  },
+  "setup_fx_chain": {
+    "properties": {
+      "tracks": {
+        "title": "Tracks",
+        "type": "string"
+      }
+    },
+    "required": [
+      "tracks"
+    ],
+    "title": "setup_fx_chainArguments",
+    "type": "object"
+  },
+  "setup_parallel_compression": {
+    "properties": {
+      "attack_ms": {
+        "default": 1.0,
+        "title": "Attack Ms",
+        "type": "number"
+      },
+      "bus_name": {
+        "default": "BUS: Parallel Comp",
+        "title": "Bus Name",
+        "type": "string"
+      },
+      "ratio": {
+        "default": 10.0,
+        "title": "Ratio",
+        "type": "number"
+      },
+      "release_ms": {
+        "default": 100.0,
+        "title": "Release Ms",
+        "type": "number"
+      },
+      "return_db": {
+        "default": -8.0,
+        "title": "Return Db",
+        "type": "number"
+      },
+      "send_db": {
+        "default": 0.0,
+        "title": "Send Db",
+        "type": "number"
+      },
+      "source_tracks": {
+        "title": "Source Tracks",
+        "type": "string"
+      },
+      "threshold_db": {
+        "default": -24.0,
+        "title": "Threshold Db",
+        "type": "number"
+      }
+    },
+    "required": [
+      "source_tracks"
+    ],
+    "title": "setup_parallel_compressionArguments",
+    "type": "object"
+  },
+  "setup_routing": {
+    "properties": {
+      "sends": {
+        "title": "Sends",
+        "type": "string"
+      }
+    },
+    "required": [
+      "sends"
+    ],
+    "title": "setup_routingArguments",
+    "type": "object"
+  },
+  "setup_sidechain": {
+    "properties": {
+      "amount": {
+        "default": 0.7,
+        "title": "Amount",
+        "type": "number"
+      },
+      "attack_ms": {
+        "default": 5.0,
+        "title": "Attack Ms",
+        "type": "number"
+      },
+      "compressor_name": {
+        "default": "ReaComp",
+        "title": "Compressor Name",
+        "type": "string"
+      },
+      "fx_index": {
+        "default": -1,
+        "title": "Fx Index",
+        "type": "integer"
+      },
+      "ratio": {
+        "default": 0.0,
+        "title": "Ratio",
+        "type": "number"
+      },
+      "release_ms": {
+        "default": 180.0,
+        "title": "Release Ms",
+        "type": "number"
+      },
+      "send_db": {
+        "default": 0.0,
+        "title": "Send Db",
+        "type": "number"
+      },
+      "source_track": {
+        "title": "Source Track",
+        "type": "integer"
+      },
+      "target_track": {
+        "title": "Target Track",
+        "type": "integer"
+      },
+      "threshold_db": {
+        "default": 0.0,
+        "title": "Threshold Db",
+        "type": "number"
+      }
+    },
+    "required": [
+      "source_track",
+      "target_track"
+    ],
+    "title": "setup_sidechainArguments",
+    "type": "object"
+  },
+  "setup_vocal_chain": {
+    "properties": {
+      "air_boost_db": {
+        "default": 1.5,
+        "title": "Air Boost Db",
+        "type": "number"
+      },
+      "comp_ratio": {
+        "default": 3.0,
+        "title": "Comp Ratio",
+        "type": "number"
+      },
+      "comp_threshold_db": {
+        "default": -16.0,
+        "title": "Comp Threshold Db",
+        "type": "number"
+      },
+      "harsh_cut_db": {
+        "default": -1.5,
+        "title": "Harsh Cut Db",
+        "type": "number"
+      },
+      "hp_freq": {
+        "default": 100.0,
+        "title": "Hp Freq",
+        "type": "number"
+      },
+      "mud_cut_db": {
+        "default": -2.0,
+        "title": "Mud Cut Db",
+        "type": "number"
+      },
+      "plate_bus_name": {
+        "default": "BUS: Vocal Plate",
+        "title": "Plate Bus Name",
+        "type": "string"
+      },
+      "plate_send_db": {
+        "default": -8.0,
+        "title": "Plate Send Db",
+        "type": "number"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "setup_vocal_chainArguments",
+    "type": "object"
+  },
+  "stack_chop_layers": {
+    "properties": {
+      "intervals_semitones": {
+        "default": "[7, 12]",
+        "title": "Intervals Semitones",
+        "type": "string"
+      },
+      "item_indices": {
+        "title": "Item Indices",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item_indices"
+    ],
+    "title": "stack_chop_layersArguments",
+    "type": "object"
+  },
+  "take_set_pitch": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "semitones": {
+        "title": "Semitones",
+        "type": "number"
+      },
+      "take_index": {
+        "default": -1,
+        "title": "Take Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index",
+      "semitones"
+    ],
+    "title": "take_set_pitchArguments",
+    "type": "object"
+  },
+  "take_set_playrate": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      },
+      "preserve_pitch": {
+        "default": true,
+        "title": "Preserve Pitch",
+        "type": "boolean"
+      },
+      "rate": {
+        "title": "Rate",
+        "type": "number"
+      }
+    },
+    "required": [
+      "item_index",
+      "rate"
+    ],
+    "title": "take_set_playrateArguments",
+    "type": "object"
+  },
+  "take_set_reversed": {
+    "properties": {
+      "item_index": {
+        "title": "Item Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_index"
+    ],
+    "title": "take_set_reversedArguments",
+    "type": "object"
+  },
+  "tempo_add_marker": {
+    "properties": {
+      "bpm": {
+        "default": 0,
+        "title": "Bpm",
+        "type": "number"
+      },
+      "linear": {
+        "default": false,
+        "title": "Linear",
+        "type": "boolean"
+      },
+      "position": {
+        "title": "Position",
+        "type": "number"
+      },
+      "time_sig_denom": {
+        "default": 0,
+        "title": "Time Sig Denom",
+        "type": "integer"
+      },
+      "time_sig_num": {
+        "default": 0,
+        "title": "Time Sig Num",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "position"
+    ],
+    "title": "tempo_add_markerArguments",
+    "type": "object"
+  },
+  "tempo_clear_all": {
+    "properties": {},
+    "title": "tempo_clear_allArguments",
+    "type": "object"
+  },
+  "tempo_delete_marker": {
+    "properties": {
+      "index": {
+        "title": "Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "index"
+    ],
+    "title": "tempo_delete_markerArguments",
+    "type": "object"
+  },
+  "tempo_list_markers": {
+    "properties": {},
+    "title": "tempo_list_markersArguments",
+    "type": "object"
+  },
+  "track_create": {
+    "properties": {
+      "index": {
+        "default": -1,
+        "title": "Index",
+        "type": "integer"
+      },
+      "name": {
+        "default": "",
+        "title": "Name",
+        "type": "string"
+      }
+    },
+    "title": "track_createArguments",
+    "type": "object"
+  },
+  "track_delete_batch": {
+    "properties": {
+      "entries": {
+        "title": "Entries",
+        "type": "string"
+      }
+    },
+    "required": [
+      "entries"
+    ],
+    "title": "track_delete_batchArguments",
+    "type": "object"
+  },
+  "track_freeze": {
+    "properties": {
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "track_freezeArguments",
+    "type": "object"
+  },
+  "track_get_all": {
+    "properties": {},
+    "title": "track_get_allArguments",
+    "type": "object"
+  },
+  "track_get_info": {
+    "properties": {
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "track_get_infoArguments",
+    "type": "object"
+  },
+  "track_get_mixer_state": {
+    "properties": {},
+    "title": "track_get_mixer_stateArguments",
+    "type": "object"
+  },
+  "track_get_peak": {
+    "properties": {
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "track_get_peakArguments",
+    "type": "object"
+  },
+  "track_rename": {
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "name"
+    ],
+    "title": "track_renameArguments",
+    "type": "object"
+  },
+  "track_select": {
+    "properties": {
+      "exclusive": {
+        "default": false,
+        "title": "Exclusive",
+        "type": "boolean"
+      },
+      "selected": {
+        "default": true,
+        "title": "Selected",
+        "type": "boolean"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "track_selectArguments",
+    "type": "object"
+  },
+  "track_set_color": {
+    "properties": {
+      "b": {
+        "title": "B",
+        "type": "integer"
+      },
+      "g": {
+        "title": "G",
+        "type": "integer"
+      },
+      "r": {
+        "title": "R",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "r",
+      "g",
+      "b"
+    ],
+    "title": "track_set_colorArguments",
+    "type": "object"
+  },
+  "track_set_folder": {
+    "properties": {
+      "folder_depth": {
+        "title": "Folder Depth",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "folder_depth"
+    ],
+    "title": "track_set_folderArguments",
+    "type": "object"
+  },
+  "track_set_input": {
+    "properties": {
+      "input_index": {
+        "title": "Input Index",
+        "type": "integer"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "input_index"
+    ],
+    "title": "track_set_inputArguments",
+    "type": "object"
+  },
+  "track_set_mute": {
+    "properties": {
+      "mute": {
+        "title": "Mute",
+        "type": "boolean"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "mute"
+    ],
+    "title": "track_set_muteArguments",
+    "type": "object"
+  },
+  "track_set_pan": {
+    "properties": {
+      "pan": {
+        "title": "Pan",
+        "type": "number"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "pan"
+    ],
+    "title": "track_set_panArguments",
+    "type": "object"
+  },
+  "track_set_record_arm": {
+    "properties": {
+      "arm": {
+        "title": "Arm",
+        "type": "boolean"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "arm"
+    ],
+    "title": "track_set_record_armArguments",
+    "type": "object"
+  },
+  "track_set_solo": {
+    "properties": {
+      "solo": {
+        "title": "Solo",
+        "type": "boolean"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "solo"
+    ],
+    "title": "track_set_soloArguments",
+    "type": "object"
+  },
+  "track_set_volume": {
+    "properties": {
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      },
+      "volume_db": {
+        "title": "Volume Db",
+        "type": "number"
+      }
+    },
+    "required": [
+      "track_index",
+      "volume_db"
+    ],
+    "title": "track_set_volumeArguments",
+    "type": "object"
+  },
+  "track_template_apply": {
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "name",
+      "track_index"
+    ],
+    "title": "track_template_applyArguments",
+    "type": "object"
+  },
+  "track_template_delete": {
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "title": "track_template_deleteArguments",
+    "type": "object"
+  },
+  "track_template_list": {
+    "properties": {},
+    "title": "track_template_listArguments",
+    "type": "object"
+  },
+  "track_template_save": {
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index",
+      "name"
+    ],
+    "title": "track_template_saveArguments",
+    "type": "object"
+  },
+  "track_unfreeze": {
+    "properties": {
+      "track_index": {
+        "title": "Track Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "track_index"
+    ],
+    "title": "track_unfreezeArguments",
+    "type": "object"
+  },
+  "transport_get_state": {
+    "properties": {},
+    "title": "transport_get_stateArguments",
+    "type": "object"
+  },
+  "transport_pause": {
+    "properties": {},
+    "title": "transport_pauseArguments",
+    "type": "object"
+  },
+  "transport_play": {
+    "properties": {},
+    "title": "transport_playArguments",
+    "type": "object"
+  },
+  "transport_record": {
+    "properties": {},
+    "title": "transport_recordArguments",
+    "type": "object"
+  },
+  "transport_set_bpm": {
+    "properties": {
+      "bpm": {
+        "title": "Bpm",
+        "type": "number"
+      }
+    },
+    "required": [
+      "bpm"
+    ],
+    "title": "transport_set_bpmArguments",
+    "type": "object"
+  },
+  "transport_set_playrate": {
+    "properties": {
+      "rate": {
+        "title": "Rate",
+        "type": "number"
+      }
+    },
+    "required": [
+      "rate"
+    ],
+    "title": "transport_set_playrateArguments",
+    "type": "object"
+  },
+  "transport_set_position": {
+    "properties": {
+      "seconds": {
+        "title": "Seconds",
+        "type": "number"
+      }
+    },
+    "required": [
+      "seconds"
+    ],
+    "title": "transport_set_positionArguments",
+    "type": "object"
+  },
+  "transport_set_time_signature": {
+    "properties": {
+      "denominator": {
+        "title": "Denominator",
+        "type": "integer"
+      },
+      "numerator": {
+        "title": "Numerator",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "numerator",
+      "denominator"
+    ],
+    "title": "transport_set_time_signatureArguments",
+    "type": "object"
+  },
+  "transport_stop": {
+    "properties": {},
+    "title": "transport_stopArguments",
+    "type": "object"
+  },
+  "transport_toggle_metronome": {
+    "properties": {},
+    "title": "transport_toggle_metronomeArguments",
+    "type": "object"
+  },
+  "transport_toggle_repeat": {
+    "properties": {},
+    "title": "transport_toggle_repeatArguments",
+    "type": "object"
+  },
+  "wipe_all_midi": {
+    "properties": {
+      "tracks": {
+        "default": "",
+        "title": "Tracks",
+        "type": "string"
+      }
+    },
+    "title": "wipe_all_midiArguments",
+    "type": "object"
+  }
 }

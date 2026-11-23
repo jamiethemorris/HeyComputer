@@ -1,6 +1,8 @@
 """Synchronous stdio transport for the pinned local ReaperMCP server."""
 
 import json
+import math
+import operator
 import os
 import select
 import shlex
@@ -21,6 +23,117 @@ _MAX_FRAME = 16 * 1024 * 1024
 _BRIDGE_HELP = ("In REAPER, load and run reaper_mcp_server.lua from Actions > Show action list. "
                 "If it is already running, check that REAPER and ReaperMCP use the same TMPDIR.")
 _UNKNOWN_OUTCOME = "The tool outcome is unknown; check REAPER before trying again."
+
+_SCHEMA_TYPES = {
+    "object": (dict,), "array": (list,), "string": (str,),
+    "integer": (int,), "number": (int, float), "boolean": (bool,), "null": (type(None),),
+}
+_SCHEMA_METADATA = {"title", "description", "default"}
+_NUMERIC_BOUNDS = {"minimum": operator.ge, "maximum": operator.le,
+                   "exclusiveMinimum": operator.gt, "exclusiveMaximum": operator.lt}
+_LENGTH_BOUNDS = {
+    "string": {"minLength": operator.ge, "maxLength": operator.le},
+    "array": {"minItems": operator.ge, "maxItems": operator.le},
+}
+
+
+def _finite_number(value):
+    return type(value) is int or (type(value) is float and math.isfinite(value))
+
+
+def _supported_node(schema):
+    if type(schema) is not dict:
+        return False
+    if "anyOf" in schema:
+        choices = schema["anyOf"]
+        # Pinned nullable arguments use a union with annotations only.
+        return (not (schema.keys() - _SCHEMA_METADATA - {"anyOf"})
+                and type(choices) is list and bool(choices) and all(map(_supported_node, choices)))
+    kind = schema.get("type")
+    if type(kind) is not str or kind not in _SCHEMA_TYPES:
+        return False
+    keywords = _SCHEMA_METADATA | {"type", "enum"}
+    lengths = _LENGTH_BOUNDS.get(kind, {})
+    keywords.update(lengths)
+    if any(type(schema[k]) is not int or schema[k] < 0 for k in schema.keys() & lengths.keys()):
+        return False
+    if kind in ("integer", "number"):
+        keywords.update(_NUMERIC_BOUNDS)
+        if any(not _finite_number(schema[k]) for k in schema.keys() & _NUMERIC_BOUNDS.keys()):
+            return False
+    if kind == "object":
+        keywords |= {"properties", "required", "additionalProperties"}
+    elif kind == "array":
+        keywords.add("items")
+    if schema.keys() - keywords:
+        return False
+    if "enum" in schema:
+        choices = schema["enum"]
+        if (type(choices) is not list or not choices or not all(
+                type(choice) in (str, bool, type(None)) or _finite_number(choice) for choice in choices)):
+            return False
+    if kind == "object":
+        props, required = schema.get("properties", {}), schema.get("required", [])
+        return (type(schema.get("additionalProperties", False)) is bool
+                and type(props) is dict and type(required) is list
+                and all(type(key) is str and key in props for key in required)
+                and all(type(key) is str and _supported_node(child) for key, child in props.items()))
+    if kind == "array":
+        return _supported_node(schema.get("items"))
+    return True
+
+
+def supported_schema(schema) -> bool:
+    """Whether the entire published input schema can be enforced locally."""
+    try:
+        return type(schema) is dict and schema.get("type") == "object" and _supported_node(schema)
+    except RecursionError:
+        return False
+
+
+def _validate_node(schema: dict, value: Any, path: str):
+    if "anyOf" in schema:
+        for choice in schema["anyOf"]:
+            with suppress(ValueError):
+                _validate_node(choice, value, path)
+                return
+        raise ValueError(f"Argument at {path} matches no allowed schema.")
+    kind = schema["type"]
+    if type(value) not in _SCHEMA_TYPES[kind] or (kind == "number" and not _finite_number(value)):
+        raise ValueError(f"Expected {kind} at {path}.")
+    if "enum" in schema and not any(
+            value == choice and (type(value) is type(choice) or
+                                 (_finite_number(value) and _finite_number(choice)))
+            for choice in schema["enum"]):
+        raise ValueError(f"Invalid enum value at {path}.")
+    bounds = _NUMERIC_BOUNDS if kind in ("integer", "number") else _LENGTH_BOUNDS.get(kind, {})
+    if bounds:
+        measured: Any = len(value) if kind in _LENGTH_BOUNDS else value
+        for key, meets in bounds.items():
+            if key in schema and not meets(measured, schema[key]):
+                raise ValueError(f"Argument at {path} violates {key}.")
+    if kind == "object":
+        props = schema.get("properties", {})
+        # MCP arguments are closed even when the published schema permits extras.
+        if value.keys() - props.keys():
+            raise ValueError(f"Unknown argument at {path}.")
+        if set(schema.get("required", [])) - value.keys():
+            raise ValueError(f"Missing required argument at {path}.")
+        for key, child in value.items():
+            _validate_node(props[key], child, f"{path}.{key}")
+    elif kind == "array":
+        for index, item in enumerate(value):
+            _validate_node(schema["items"], item, f"{path}[{index}]")
+
+
+def validate_schema(schema, args) -> None:
+    """Raise ValueError for unsupported schemas or invalid tool arguments."""
+    if not supported_schema(schema):
+        raise ValueError("Unsupported MCP input schema.")
+    try:
+        _validate_node(schema, args, "arguments")
+    except RecursionError:
+        raise ValueError("MCP arguments are too deeply nested.") from None
 
 
 def _child_env():

@@ -1,6 +1,6 @@
 [project]
 name = "heycomputer"
-version = "0.2.1"
+version = "0.2.2"
 description = "Quiet voice and text commands for REAPER"
 requires-python = ">=3.11"
 dependencies = [
