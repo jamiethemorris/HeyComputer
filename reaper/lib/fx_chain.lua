@@ -20,13 +20,13 @@ local function decode(a)
   if keys.position and (not ({before=true,after=true,first=true,last=true})[v.position] or type(v.anchor)~='string') then fail('Invalid plugin destination.') end
   return v
 end
-function M.prepare(actions,snapshot)
+function M.prepare(actions,snapshot,refs)
   local chains,prepared,offline_touched,param_touched,existing={},{},{},{},{}
   for _,t in ipairs(snapshot.tracks) do
     chains[t.guid]={};existing[t.guid]=true
     for _,f in ipairs(t.fx_instances or {}) do chains[t.guid][f.guid]={offline=f.offline} end
   end
-  for _,a in ipairs(actions) do
+  for index,a in ipairs(actions) do
     if a.op=='create_tracks' then chains.first_created={} end
     if M.ops[a.op] then
       if not existing[a.target] then fail('Plugin transfers need an exact existing source track.') end
@@ -34,6 +34,12 @@ function M.prepare(actions,snapshot)
       if not chain or not chain[v.fx] then fail('The exact plugin is unavailable or already deleted.') end
       if a.op=='move_fx' or a.op=='copy_fx' then
         local destination=v.destination or a.target
+        if refs then
+          local resolved=refs:resolve(destination,index)
+          if #resolved~=1 then fail('A plugin transfer needs one destination track.') end
+          destination=resolved[1].guid
+          if resolved[1].planned then chains[destination]=chains[destination] or {} end
+        end
         local destchain=chains[destination]
         if not destchain or destination==a.target and a.op=='copy_fx' then fail('Choose a different existing destination track, or create it first.') end
         if v.position=='before' or v.position=='after' then
@@ -80,9 +86,9 @@ local function verify_order(tr,expected)
 end
 function M.destination(a,v,resolve)
   if not v.destination or v.destination==a.target then return nil end
-  if v.destination=='first_created' then return assert(resolve('first_created')[1],'Destination track is missing.') end
-  for i=0,R.CountTracks(0)-1 do local t=R.GetTrack(0,i);if R.GetTrackGUID(t)==v.destination then return t end end
-  fail('The destination track disappeared.')
+  local destination=assert(resolve(v.destination)[1],'Destination track is missing.')
+  local source=FX.find(a.target,v.fx)
+  if destination~=source then return destination end
 end
 function M.apply(a,v,destination)
   local tr,fx=FX.find(a.target,v.fx)

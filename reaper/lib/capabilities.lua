@@ -1,7 +1,8 @@
 -- Native operations outside the original track-setup recipe.
 local R,json=reaper,require("json")
+local ItemTargets=require('item_targets')
 local M={ops={}}
-for op in ("transport seek set_range repeat marker_add region_add marker_update item_name item_color item_gain track_color send_create send_set send_delete save run_action launch_action"):gmatch("%S+") do M.ops[op]=true end
+for op in ("transport seek set_range repeat marker_add region_add marker_update item_name item_color item_gain item_select track_color track_visibility send_create send_set send_delete save run_action launch_action"):gmatch("%S+") do M.ops[op]=true end
 local function check(ok,msg) if not ok then error(msg or "Invalid command parameters.",0) end end
 local function num(n,lo,hi) return type(n)=="number" and n==n and n>=lo and n<=hi end
 local function object(value,allowed,required)
@@ -144,29 +145,45 @@ local function project_context(s,project)
 end
 function M.snapshot(s,project)
   if not R.GetCursorPositionEx then return end -- minimal fixtures/unsupported hosts
+  s.item_queries_available=true
   s.timeline=timeline(project)
   s.timeline.cursor_musical=R.format_timestr_pos(s.timeline.cursor,"",2)
   s.items,s.markers,s.actions={},markers(project),{}
   s.actions,s.native_commands,s.launch_actions=action_catalog()
   project_context(s,project)
   -- Only the dedicated transport commands are shared with the model.
-  s.native_commands={skip_selection=s.native_commands["Transport: Play (skip time selection)"] or 0}
+  s.native_commands={skip_selection=s.native_commands["Transport: Play (skip time selection)"] or 0,
+    duplicate_tracks=s.native_commands["Track: Duplicate tracks"] or 0}
+  local track_items={}
+  for _,t in ipairs(s.tracks) do t.item_count=0;track_items[t.guid]=t end
   for i=0,R.CountMediaItems(project)-1 do
     local item=R.GetMediaItem(project,i)
+    local track_guid=R.GetTrackGUID(R.GetMediaItemTrack(item))
+    local first,length=R.GetMediaItemInfo_Value(item,"D_POSITION"),R.GetMediaItemInfo_Value(item,"D_LENGTH")
+    local summary=track_items[track_guid]
+    if summary then
+      summary.item_count=summary.item_count+1
+      summary.item_start=math.min(summary.item_start or first,first)
+      summary.item_end=math.max(summary.item_end or 0,first+length)
+    end
     local selected=R.IsMediaItemSelected(item)
     if #s.items<2000 or selected then
       local take=R.GetActiveTake(item)
       local _,name
       if take then _,name=R.GetSetMediaItemTakeInfo_String(take,"P_NAME","",false)
       else _,name=R.GetSetMediaItemInfo_String(item,"P_NOTES","",false) end
-      local entry={guid=item_guid(item),track=R.GetTrackGUID(R.GetMediaItemTrack(item)),selected=selected,
-        name=name,start=R.GetMediaItemInfo_Value(item,"D_POSITION"),length=R.GetMediaItemInfo_Value(item,"D_LENGTH"),
+      local entry={guid=item_guid(item),track=track_guid,selected=selected,
+        name=name,start=first,length=length,['end']=first+length,
         gain=R.GetMediaItemInfo_Value(item,"D_VOL"),has_take=take~=nil,
         muted=R.GetMediaItemInfo_Value(item,"B_MUTE")~=0,locked=R.GetMediaItemInfo_Value(item,"C_LOCK")~=0,
         color=R.GetMediaItemInfo_Value(item,"I_CUSTOMCOLOR"),
         fade_in_seconds=R.GetMediaItemInfo_Value(item,"D_FADEINLEN"),fade_out_seconds=R.GetMediaItemInfo_Value(item,"D_FADEOUTLEN")}
       entry.start_musical=R.format_timestr_pos(entry.start,"",2)
       entry.end_musical=R.format_timestr_pos(entry.start+entry.length,"",2)
+      if R.TimeMap2_timeToQN then
+        entry.start_qn=R.TimeMap2_timeToQN(project,first)
+        entry.end_qn=R.TimeMap2_timeToQN(project,first+length)
+      end
       if take and R.TakeIsMIDI then entry.take_type=R.TakeIsMIDI(take) and "midi" or "audio" end
       s.items[#s.items+1]=entry
     else s.items_truncated=true end
@@ -245,7 +262,7 @@ local function item_targets(target,s)
 end
 
 -- Resolve every extended operation before the transaction starts.
-function M.prepare(actions,s)
+function M.prepare(actions,s,refs,item_refs)
   local prepared,created,graph,sendlists,parents={},0,{},{},{}
   local project=R.EnumProjects(-1,"")
   for _,t in ipairs(s.tracks) do
@@ -263,7 +280,35 @@ function M.prepare(actions,s)
     return false
   end
   for index,a in ipairs(actions) do
-    if a.op=="create_tracks" then
+    local function keys(selector)
+      if not refs then return track_keys(selector,s,created) end
+      local out={};for _,t in ipairs(refs:resolve(selector,index)) do out[#out+1]=t.guid end;return out
+    end
+    if refs and refs.steps[a] then
+      local step=refs.steps[a]
+      for _,key in ipairs(step.outputs) do graph[key]={};sendlists[key]={} end
+      for _,batch in ipairs(step.batches) do
+        local mapping={};for i,source in ipairs(batch.source) do mapping[source]=batch.outputs[i] end
+        for i,source in ipairs(batch.source) do
+          local dest=batch.outputs[i]
+          for key,count in pairs(sendlists[source] or {}) do
+            local mapped=mapping[key] or key;sendlists[dest][mapped]=count;graph[dest][mapped]=true
+          end
+        end
+      end
+      for _,key in ipairs(step.order) do
+        local old=parents[key]
+        if old and not sendlists[key][old] then graph[key][old]=nil end
+        parents[key]=nil
+      end
+      for _,key in ipairs(step.order) do
+        local parent=step.parents[key]
+        if parent and refs.tracks[key].master_parent_send~=false then
+          check(not reaches(parent,key),'That folder layout would create a feedback route.')
+          parents[key]=parent;graph[key][parent]=true
+        end
+      end
+    elseif a.op=="create_tracks" then
       created=a.count
       for i=1,created do graph["new:"..i]={}; sendlists["new:"..i]={} end
     end
@@ -275,7 +320,7 @@ function M.prepare(actions,s)
         check(index==#actions,"Transport, save and native actions must be last.")
         p.terminal=true
       end
-      if not a.op:match("^item_") and not a.op:match("^send_") and a.op~="track_color" and a.op~="marker_update" then check(a.target=="project") end
+      if not a.op:match("^item_") and not a.op:match("^send_") and a.op~="track_color" and a.op~="track_visibility" and a.op~="marker_update" then check(a.target=="project") end
       if s.timeline.play_state&4~=0 then
         check(a.op=="transport" and a.value=="stop" or a.op=="marker_add","Stop recording before making this change.")
       end
@@ -336,26 +381,55 @@ function M.prepare(actions,s)
         check(a.value=="on" or a.value=="off")
         check(a.value=="off" or s.timeline.loop_end>s.timeline.loop_start or prepared.selection,"Choose loop points first.")
       elseif a.op:match("^item_") then
-        p.items=item_targets(a.target,s)
-        if a.op=="item_color" then p.color=native_color(a.value)
+        if a.op=='item_select' then
+          check(s.item_queries_available,'Reopen HeyComputer to enable native item selection.')
+          check(index==#actions,'Make explicit item selection the last step; edit items directly first.')
+          check(a.value=='replace' or a.value=='add' or a.value=='remove' or a.value=='clear','Invalid item selection mode.')
+        end
+        if a.op=='item_select' and a.value=='clear' then
+          check(a.target=='project');p.items={}
+        else
+          p.query=ItemTargets.prepare(a.target,s,position,project)
+          if p.query then
+            p.items=ItemTargets.resolve(p.query,project)
+            local pending_items=false
+            for n=1,index-1 do
+              local prior=actions[n]
+              if prior.op=='item_repeat' then
+                for _,item in ipairs(s.items) do if item.guid==prior.target and p.query.tracks[item.track] then pending_items=true end end
+              elseif prior.op=='midi_create' and refs then
+                for _,tr in ipairs(refs:resolve(prior.target,n)) do if p.query.tracks[tr.guid] then pending_items=true end end
+              end
+            end
+            check(#p.items>0 or pending_items,'No items match those tracks and filters.')
+          else p.items=item_refs and item_refs:resolve(a.target,index) or item_targets(a.target,s) end
+        end
+        if a.op=='item_select' then -- selection mode already validated
+        elseif a.op=="item_color" then p.color=native_color(a.value)
         elseif a.op=="item_name" then check(#a.value>0 and #a.value<=2048)
         else
           p.params=object(a.value,{db=true,relative=true},{"db","relative"})
           check(num(p.params.db,-150,24) and type(p.params.relative)=="boolean")
         end
-      elseif a.op=="track_color" then track_keys(a.target,s,created); p.color=native_color(a.value)
+      elseif a.op=="track_color" then keys(a.target); p.color=native_color(a.value)
+      elseif a.op=="track_visibility" then
+        keys(a.target)
+        p.visibility=object(a.value,{tcp=true,mcp=true},{})
+        check(next(p.visibility)~=nil,'Choose track panel and/or mixer visibility.')
+        for _,v in pairs(p.visibility) do check(type(v)=='boolean','Visibility must be true or false.') end
       elseif a.op:match("^send_") then
         p.params=object(a.value,{destination=true,volume_db=true,pan=true,mode=true,mute=true},{"destination"})
         local v=p.params
         check(type(v.destination)=="string" and v.destination~="created" and v.destination~="all" and v.destination~="selected","Choose one send destination.")
-        local dest=track_keys(v.destination,s,created)[1]
+        local destinations=keys(v.destination);check(#destinations==1,'Choose one send destination.')
+        local dest=destinations[1]
         if v.volume_db~=nil then check(num(v.volume_db,-150,12)) end
         if v.pan~=nil then check(num(v.pan,-1,1)) end
         if v.mute~=nil then check(type(v.mute)=="boolean") end
         if v.mode then check(({post_fader=true,post_fx=true,pre_fx=true})[v.mode]) end
         if a.op=="send_delete" then for k in pairs(v) do check(k=="destination") end end
         if a.op=="send_set" then check(v.volume_db~=nil or v.pan~=nil or v.mute~=nil or v.mode~=nil) end
-        for _,src in ipairs(track_keys(a.target,s,created)) do
+        for _,src in ipairs(keys(a.target)) do
           check(src~=dest,"A track cannot send to itself.")
           local count=sendlists[src][dest] or 0
           if a.op=="send_create" then
@@ -394,7 +468,22 @@ function M.restore(project,backup)
   end
   return ok
 end
-function M.apply(a,p,project,remember,target,children,backup)
+local function live_reaches(from,to,seen)
+  if from==to then return true end
+  seen=seen or {};if seen[from] then return false end;seen[from]=true
+  -- Native duplication can also copy external receives. Recheck real routing
+  -- before inserting a send, after all earlier track-producing operations.
+  if R.GetParentTrack and R.GetMediaTrackInfo_Value(from,'B_MAINSEND')~=0 then
+    local parent=R.GetParentTrack(from)
+    if parent and live_reaches(parent,to,seen) then return true end
+  end
+  for i=0,R.GetTrackNumSends(from,0)-1 do
+    local dest=R.GetTrackSendInfo_Value(from,0,i,'P_DESTTRACK')
+    if dest and live_reaches(dest,to,seen) then return true end
+  end
+  return false
+end
+function M.apply(a,p,project,remember,target,children,backup,item_bindings)
   local op=a.op
   if p.terminal then return end
   if op=="seek" then
@@ -415,10 +504,21 @@ function M.apply(a,p,project,remember,target,children,backup)
     local name=p.params.name~=nil and p.params.name or m.name
     check(R.SetProjectMarkerByIndex2(project,m.index,m.region,m.start,m.finish,m.id,name,p.color or m.color,name=="" and 1 or 0),"Could not update the marker/region.")
   elseif op:match("^item_") then
+    local specs=p.query and ItemTargets.resolve(p.query,project) or p.items
+    check(#specs>0 or op=='item_select' and a.value=='clear','No items match those tracks and filters.')
     local items={}
     for i=0,R.CountMediaItems(project)-1 do local item=R.GetMediaItem(project,i); items[item_guid(item)]=item end
-    for _,spec in ipairs(p.items) do
-      local item=items[spec.guid]; check(item,"An item disappeared.")
+    if op=='item_select' then
+      local ids={}
+      for _,spec in ipairs(specs) do
+        local item=item_bindings and item_bindings[spec.guid] or items[spec.guid];check(item,'An item disappeared.')
+        ids[#ids+1]={guid=item_guid(item)}
+      end
+      ItemTargets.select(a.value,ids,project,remember)
+      return
+    end
+    for _,spec in ipairs(specs) do
+      local item=item_bindings and item_bindings[spec.guid] or items[spec.guid]; check(item,"An item disappeared.")
       remember(R.GetMediaItemTrack(item))
       if op=="item_name" then
         local take=R.GetActiveTake(item)
@@ -437,6 +537,18 @@ function M.apply(a,p,project,remember,target,children,backup)
     end
   elseif op=="track_color" then
     for _,tr in ipairs(target(a.target,children)) do remember(tr); check(R.SetMediaTrackInfo_Value(tr,"I_CUSTOMCOLOR",p.color),"Could not color a track.") end
+  elseif op=="track_visibility" then
+    for _,tr in ipairs(target(a.target,children)) do
+      remember(tr)
+      for panel,visible in pairs(p.visibility) do
+        local key=panel=='tcp' and 'B_SHOWINTCP' or 'B_SHOWINMIXER'
+        local value=visible and 1 or 0
+        if R.GetMediaTrackInfo_Value(tr,key)~=value then
+          check(R.SetMediaTrackInfo_Value(tr,key,value),'Could not change track visibility.')
+          check(R.GetMediaTrackInfo_Value(tr,key)==value,'REAPER did not retain the requested track visibility.')
+        end
+      end
+    end
   elseif op:match("^send_") then
     local v=p.params; local dest=target(v.destination,children)[1]
     check(dest,"Send destination disappeared.")
@@ -444,6 +556,7 @@ function M.apply(a,p,project,remember,target,children,backup)
       remember(tr)
       local idx
       if op=="send_create" then
+        check(not live_reaches(dest,tr),'That send would create a feedback route.')
         idx=R.CreateTrackSend(tr,dest); check(idx>=0,"Could not create the send.")
       else
         for i=0,R.GetTrackNumSends(tr,0)-1 do if R.GetTrackSendInfo_Value(tr,0,i,"P_DESTTRACK")==dest then check(not idx,"Multiple sends match."); idx=i end end

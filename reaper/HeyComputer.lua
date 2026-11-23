@@ -17,19 +17,25 @@ local Theme = require("theme")
 local Actions = require("actions")
 local Remote = require("remote")
 local TestBridge = require("test_bridge")
+local Wake = require("wake")
+local Runtime = require("runtime")
+local Voice = require("voice")
 local ImGui = dofile(R.ImGui_GetBuiltinPath().."/imgui.lua")("0.10")
 local ctx = ImGui.CreateContext("HeyComputer",ImGui.ConfigFlags_DockingEnable)
 local runtime = R.GetResourcePath().."/Data/HeyComputer"
 local session = (R.genGuid()):gsub("[^%w]", "")
 local inbox = runtime.."/"..session
 R.RecursiveCreateDirectory(inbox,0)
+local S
 local function read(path)
   local f=io.open(path,"rb"); if not f then return nil end
   local data=f:read("*a"); f:close(); return data
 end
 local function write(path,content)
-  local f,err=io.open(path..".tmp","wb"); if not f then error(err) end
-  f:write(content); f:close(); assert(os.rename(path..".tmp",path))
+  if S and S.disconnected then return false end
+  local ok=Runtime.write(path,content)
+  if not ok and S then Runtime.disconnect(S) end
+  return ok
 end
 local function read_json(path)
   local data=read(path); if not data then return nil end
@@ -43,29 +49,36 @@ local test_bridge=TestBridge.new(session,
   function(name) return read_json(inbox.."/"..name) end,
   function(name,value) write(inbox.."/"..name,json.encode(value)) end,
   function(name) os.remove(inbox.."/"..name) end,os.time)
+local wake=Wake.new(session,
+  function(name) return read_json(inbox.."/"..name) end,
+  function(name,value) write(inbox.."/"..name,json.encode(value)) end,
+  function(name) os.remove(inbox.."/"..name) end,os.time)
+local voice=Voice.new(session,function(name,value) return write(inbox.."/"..name,json.encode(value)) end,os.time,
+  function()return R.GetPlayStateEx(R.EnumProjects(-1,""))&4~=0 end)
 local function quote(s)
   assert(not s:find('["\r\n]'), "Unsupported quote/newline in installation path")
   return '"'..s..'"'
 end
 local python = root.."/.venv/bin/python"
-local S = {text="", status="Starting…", message="", history={}, settings=false,
+S = {text="", status="Starting…", message="", history={}, settings=false,
   config={use_jev=true,allow_lua=false,vision_enabled=false,mic_device="",mic_channel=1,aliases=""},
   devices={},keys={},presets={},newkeys={openrouter="",openai="",typesafe=""},
   recording=false, pending=nil, receipt=nil, lua=nil, ready=false, settings_loaded=false, started=R.time_precise()}
 local count,last_heartbeat,last_poll,last_theme,last_remote = 0,0,0,0,0
 local palette=Theme.palette()
 local function send(kind,extra)
-  if S.pending then return false end
+  if S.pending or S.disconnected then return false end
   count=count+1
   local id="j"..count
   local job=extra or {}; job.id=id; job.kind=kind
-  write(inbox.."/"..id..".request.json",json.encode(job))
+  if not write(inbox.."/"..id..".request.json",json.encode(job)) then return false end
   S.pending={id=id,kind=kind,snapshot=job.snapshot,started=R.time_precise()}
   return true
 end
 local function history(role,text,kind)
   S.history[#S.history+1]={role=role,text=text,kind=kind or "reply"}
   while #S.history>16 do table.remove(S.history,1) end
+  if role=="assistant" then voice.say(text,kind or "reply",S) end
 end
 local function execute_result(result,snapshot,native_setup)
   local ok,message,receipt=Executor.execute(result.actions,snapshot)
@@ -74,23 +87,27 @@ local function execute_result(result,snapshot,native_setup)
   S.message=message; S.receipt=receipt
   history("assistant",message,ok and "receipt" or "error")
 end
-local function submit(voice)
+local function submit(voice,stop_phrase)
   if S.pending or not S.ready then return end
   if voice and not S.recording or not voice and S.recording then return end
   local text=S.text:match("^%s*(.-)%s*$")
   if not voice and text=="" then return end
   S.lua=nil
   local snapshot=Executor.snapshot()
-  send(voice and "record_stop" or "plan", {text=text,snapshot=snapshot,history=S.history})
+  if not send(voice and "record_stop" or "plan", {text=text,snapshot=snapshot,history=S.history,
+    stop_phrase=stop_phrase,record_id=S.record_id}) then return end
   S.status=voice and "Transcribing…" or "Working…"
   if not voice then history("user",text); S.text="" end
-  if voice then S.recording=false end
+  if voice then S.recording=false; S.record_id=nil end
 end
 local function activate(kind)
   if not Actions.allowed(S,kind) then return end
   if kind=="send" then submit(false)
   elseif S.recording then submit(true)
-  else send("record_start"); S.status="Opening microphone…" end
+  else
+    voice.stop()
+    if send("record_start") then S.status="Opening microphone…" end
+  end
 end
 local function visual_guard()
   local project=R.EnumProjects(-1,"")
@@ -106,15 +123,19 @@ local function visual_guard()
       end
     end
   end
-  write(inbox.."/visual-guard.json",json.encode({project=tostring(project),
+  return write(inbox.."/visual-guard.json",json.encode({project=tostring(project),
     revision=R.GetProjectStateChangeCount(project),recording=R.GetPlayStateEx(project)&4~=0,opened_fx=found}))
 end
 local function poll()
+  if S.disconnected then return end
   local now=R.time_precise()
-  if now-last_heartbeat>1 then write(inbox.."/heartbeat","alive"); last_heartbeat=now end
+  if now-last_heartbeat>1 then
+    if not write(inbox.."/heartbeat","alive") then return end
+    last_heartbeat=now
+  end
   if now-last_poll<.10 then return end
   last_poll=now
-  visual_guard()
+  if not visual_guard() then return end
   if not S.ready and not S.timed_out then
     if read(inbox.."/ready.json") then S.ready=true; send("settings"); S.status="Ready"
     elseif now-S.started>12 then S.status="Helper unavailable"; S.message="Run scripts/setup.sh in the HeyComputer folder, then reopen this panel. Startup logs are in REAPER’s resource folder: Data/HeyComputer/worker.log." end
@@ -153,7 +174,7 @@ local function poll()
     result={kind="reply",message=pending.native_setup and "Request cancelled. Earlier native setup remains; parameter edits were not applied." or "Request cancelled before execution."}
   end
   if result.kind=="parameter_prepare" then
-    local allowed={create_tracks=true,folder_created=true,pan=true,add_fx=true,inspect_fx=true,offline_fx=true,input=true,
+    local allowed={create_tracks=true,duplicate_tracks=true,folder_tracks=true,folder_created=true,pan=true,add_fx=true,inspect_fx=true,offline_fx=true,input=true,
       arm=true,mute=true,solo=true,volume=true,rename=true}
     local valid=type(result.actions)=="table" and #result.actions>0 and type(result.message)=="string"
       and result.message:find("%S") and #result.message<=12000 and not pending.snapshot.fx_parameters
@@ -177,7 +198,7 @@ local function poll()
     end
     return
   elseif result.kind=="visual_prepare" then
-    local allowed={create_tracks=true,folder_created=true,pan=true,add_fx=true,open_fx=true,input=true,
+    local allowed={create_tracks=true,duplicate_tracks=true,folder_tracks=true,folder_created=true,pan=true,add_fx=true,open_fx=true,input=true,
       arm=true,mute=true,solo=true,volume=true,rename=true}
     local valid=S.config.vision_enabled and type(result.actions)=="table" and #result.actions>0
       and type(result.message)=="string" and result.message:find("%S") and #result.message<=12000
@@ -203,12 +224,17 @@ local function poll()
   elseif result.kind=="settings" then
     S.settings_loaded=true
     S.config=result.config; S.devices=result.devices or {}; S.keys=result.keys or {}
+    S.outputs=result.outputs or {};S.voices=result.voices or {};S.voice_error=result.voice_error or ""
     S.remote=result.remote or {}; S.pair_code=nil; S.pair_qr=nil
     S.vision=result.vision or {}
+    S.wake=result.wake or {}
     S.presets=result.presets or {}
     S.audio_error=result.audio_error or ""
     S.newkeys={openrouter="",openai="",typesafe=""}; S.status="Ready"
     if not S.keys[S.config.fallback_provider] then S.settings=true end
+  elseif result.kind=="audio_devices" then
+    S.devices=result.devices or {};S.outputs=result.outputs or {};S.voices=result.voices or {}
+    S.audio_error=result.audio_error or "";S.voice_error=result.voice_error or "";S.status="Audio devices refreshed"
   elseif result.kind=="visual_status" then
     S.vision=result.vision or {}; S.status="Ready"
   elseif result.kind=="visual_done" then
@@ -218,8 +244,9 @@ local function poll()
     S.remote=result.remote; S.pair_code=result.code
     S.pair_qr=result.qr_rows
     S.pair_until=R.time_precise()+result.expires_in; S.status="Ready"
-  elseif result.kind=="recording" then S.recording=true; S.status="Listening…"
-  elseif result.kind=="cancelled" then S.recording=false; S.status="Ready"
+  elseif result.kind=="wake_log" then S.wake_entries=result.entries or {}; S.status="Ready"
+  elseif result.kind=="recording" then S.recording=true; S.record_id=result.record_id; S.status="Listening…"
+  elseif result.kind=="cancelled" then S.recording=false; S.record_id=nil; S.status="Ready"
   elseif result.kind=="plan" then execute_result(result,pending.snapshot,pending.native_setup)
   elseif result.kind=="lua" then
     S.lua={code=result.lua,snapshot=pending.snapshot}; S.status="Review script"
@@ -229,15 +256,17 @@ local function poll()
     S.message=result.message or "The request failed."
     S.status=result.kind=="reply" and "Reply" or "Needs attention"
     history("assistant",S.message,result.kind)
-    if pending.kind=="record_start" or pending.kind=="record_stop" then S.recording=false end
+    if pending.kind=="record_start" or pending.kind=="record_stop" then S.recording=false; S.record_id=nil end
   end
   S.model=result.model or S.model
 end
 
 local function combo(label,current,items)
   local selected=current
+  local title=current~="" and current or "System default"
+  for _,item in ipairs(items)do if type(item)=="table" and item.value==current then title=item.title end end
   ImGui.SetNextItemWidth(ctx,-1)
-  if ImGui.BeginCombo(ctx,label,current~="" and current or "System default") then
+  if ImGui.BeginCombo(ctx,label,title) then
     for _,item in ipairs(items) do
       local value=type(item)=="table" and item.value or item
       local title=type(item)=="table" and item.title or item
@@ -302,14 +331,7 @@ local function settings_view()
     end
   end
   ImGui.TextWrapped(ctx,"Keys are stored in macOS Keychain. Leave blank to keep a saved key.")
-  ImGui.BeginDisabled(ctx,S.pending~=nil or not S.ready or S.recording)
-  if ImGui.Button(ctx,"Save settings",-1,0) then
-    send("save_settings",{config=S.config,keys=S.newkeys})
-    S.newkeys={openrouter="",openai="",typesafe=""}; S.status="Saving…"; S.message=""
-  end
-  ImGui.EndDisabled(ctx)
-  label(S.status)
-  if S.message~="" then ImGui.TextWrapped(ctx,S.message) end
+  ImGui.TextWrapped(ctx,"Use Save all settings at the bottom to apply changes across this page.")
   ImGui.Spacing(ctx)
   label("Microphone")
   local devices={{value="",title="System default"}}
@@ -319,11 +341,87 @@ local function settings_view()
   local changed,value=ImGui.InputInt(ctx,"Input channel",S.config.mic_channel)
   if changed then S.config.mic_channel=math.max(1,value) end
   if S.audio_error~="" then ImGui.TextWrapped(ctx,S.audio_error) end
+  ImGui.Spacing(ctx);label("Spoken replies · local macOS voice")
+  local was_enabled=S.config.speech_enabled==true
+  _,S.config.speech_enabled=ImGui.Checkbox(ctx,"Speak questions, replies and problems",was_enabled)
+  if was_enabled and not S.config.speech_enabled then voice.stop() end
+  ImGui.TextWrapped(ctx,"No speech API or usage fees. Successful commands stay silent. Speech pauses wake detection and stops when you start Talk or REAPER recording.")
+  local voices={{value="",title="System voice"}}
+  for _,v in ipairs(S.voices or {})do voices[#voices+1]={value=v.id,title=v.name.." · "..v.language}end
+  label("Voice");S.config.speech_voice=combo("##speech_voice",S.config.speech_voice or "",voices)
+  local outputs={{value="",title="System default"}}
+  local channel_count=2
+  for _,d in ipairs(S.outputs or {})do
+    outputs[#outputs+1]={value=d.id,title=d.name.." ("..d.channels.." outputs)"}
+  end
+  label("Audio output")
+  local previous_output=S.config.speech_device or ""
+  S.config.speech_device=combo("##speech_device",previous_output,outputs)
+  for _,d in ipairs(S.outputs or {})do
+    if d.id==S.config.speech_device or S.config.speech_device=="" and d.default then channel_count=d.channels end
+  end
+  if S.config.speech_device~=previous_output then
+    S.config.speech_channel=1;S.config.speech_channels=math.min(2,channel_count)
+  end
+  local channels={}
+  for i=1,channel_count,2 do
+    if i<channel_count then channels[#channels+1]={value=i..":2",title="Outputs "..i.."–"..(i+1).." · stereo"} end
+  end
+  for i=1,channel_count do channels[#channels+1]={value=i..":1",title="Output "..i.." · mono"}end
+  label("Output channels")
+  local channel=combo("##speech_channels",(S.config.speech_channel or 1)..":"..(S.config.speech_channels or 2),channels)
+  local first_output,output_count=channel:match("^(%d+):(%d+)$")
+  S.config.speech_channel=tonumber(first_output);S.config.speech_channels=tonumber(output_count)
+  ImGui.SetNextItemWidth(ctx,-1)
+  local _,volume=ImGui.SliderDouble(ctx,"##speech_volume",(S.config.speech_volume or .2)*100,0,100,"Voice volume %.0f%%")
+  S.config.speech_volume=volume/100
+  ImGui.BeginDisabled(ctx,not S.ready or S.recording)
+  if ImGui.Button(ctx,"Test voice") then voice.preview(S) end
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx,"Stop voice") then voice.stop() end
+  ImGui.EndDisabled(ctx)
+  ImGui.TextWrapped(ctx,"Test voice previews these output and volume choices before saving. Volume starts at 20% and does not change REAPER or system volume.")
+  local voice_info=S.meter and S.meter.voice or {}
+  if S.voice_error and S.voice_error~="" then ImGui.TextWrapped(ctx,S.voice_error)end
+  if voice_info.error and voice_info.error~="" then ImGui.TextWrapped(ctx,voice_info.error)end
+  ImGui.Spacing(ctx); label("Local wake & stop words")
+  _,S.config.wake_enabled=ImGui.Checkbox(ctx,"Listen for a wake word",S.config.wake_enabled==true)
+  label("Wake phrase")
+  ImGui.SetNextItemWidth(ctx,-1)
+  _,S.config.wake_phrase=ImGui.InputText(ctx,"##wakephrase",S.config.wake_phrase or "hey computer")
+  label("Stop & send phrase")
+  ImGui.SetNextItemWidth(ctx,-1)
+  _,S.config.wake_stop_phrase=ImGui.InputText(ctx,"##stopphrase",S.config.wake_stop_phrase or "execute")
+  ImGui.SetNextItemWidth(ctx,-1)
+  local sensitivity_changed,sensitivity=ImGui.SliderDouble(ctx,"##wakesensitivity",1-(S.config.wake_threshold or .35),.05,.95,"Sensitivity %.2f")
+  if sensitivity_changed then S.config.wake_threshold=1-sensitivity end
+  ImGui.TextWrapped(ctx,"Higher sensitivity hears quieter phrases but may trigger more often. English phrases only. Save all settings to apply.")
+  _,S.config.wake_log_enabled=ImGui.Checkbox(ctx,"Keep a local activation log",S.config.wake_log_enabled~=false)
+  ImGui.TextWrapped(ctx,"Listens only while this panel is open, including hidden dock tabs. Idle audio stays in memory. Say the stop phrase only when ready to send; a 90-second timeout discards the recording.")
+  ImGui.TextWrapped(ctx,"The log stores detected phrases, timestamps, outcomes and submitted command transcripts. Cancelled recordings have no transcript. No audio is saved. Logs rotate at 1 MB and stay in Data/HeyComputer.")
+  local wake_info=S.meter and S.meter.wake or S.wake or {}
+  ImGui.TextWrapped(ctx,wake_info.status or "Wake word off")
+  if wake_info.log_error and wake_info.log_error~="" then ImGui.TextWrapped(ctx,wake_info.log_error) end
+  ImGui.BeginDisabled(ctx,S.pending~=nil or S.recording)
+  if ImGui.SmallButton(ctx,"View / refresh activation log") then send("wake_log") end
+  ImGui.SameLine(ctx)
+  if ImGui.SmallButton(ctx,"Clear log") then send("wake_log_clear") end
+  ImGui.EndDisabled(ctx)
+  if S.wake_entries and ImGui.CollapsingHeader(ctx,"Recent activations") then
+    if #S.wake_entries==0 then ImGui.TextWrapped(ctx,"No activations logged.") end
+    for _,entry in ipairs(S.wake_entries) do
+      label((entry.time or "").." · "..(entry.event or ""))
+      if entry.phrase then ImGui.TextWrapped(ctx,"Detected: "..entry.phrase) end
+      if entry.transcript then ImGui.TextWrapped(ctx,"Said: "..entry.transcript) end
+      if entry.reason then ImGui.TextWrapped(ctx,entry.reason) end
+      ImGui.Spacing(ctx)
+    end
+  end
   ImGui.Spacing(ctx); label("iPhone & Watch remote")
   _,S.config.remote_enabled=ImGui.Checkbox(ctx,"Enable remote control",S.config.remote_enabled==true)
   ImGui.SetNextItemWidth(ctx,100)
   _,S.config.remote_port=ImGui.InputInt(ctx,"Port",S.config.remote_port or 8765)
-  ImGui.TextWrapped(ctx,"Use only on trusted Wi-Fi. This prototype uses unencrypted local HTTP. Save settings to apply.")
+  ImGui.TextWrapped(ctx,"Use only on trusted Wi-Fi. This prototype uses unencrypted local HTTP. Save all settings to apply.")
   local remote_info=S.remote or {}
   if remote_info.running then
     ImGui.TextWrapped(ctx,remote_info.url or "")
@@ -367,7 +465,7 @@ local function settings_view()
   _,S.config.vision_enabled=ImGui.Checkbox(ctx,"Allow REAPER-only visual control",S.config.vision_enabled==true)
   _,S.config.ui_memory_enabled=ImGui.Checkbox(ctx,"Use and learn UI memory",S.config.ui_memory_enabled~=false)
   ImGui.EndDisabled(ctx)
-  ImGui.TextWrapped(ctx,"Uses the GPT model and endpoint above. Only allowed REAPER windows are sent as images; nothing is saved to your screenshot folder. Save settings to apply.")
+  ImGui.TextWrapped(ctx,"Uses the GPT model and endpoint above. Only allowed REAPER windows are sent as images; nothing is saved to your screenshot folder. Save all settings to apply.")
   ImGui.TextWrapped(ctx,"UI memory keeps reusable control notes in Data/HeyComputer/ui-memory.json inside REAPER’s resource folder. Locations belong to each window and are checked against the current image.")
   ImGui.TextWrapped(ctx,"Visual input moves your mouse and uses keyboard focus. Escape or Cancel stops further input. Earlier changes may need REAPER or plugin Undo.")
   ImGui.BeginDisabled(ctx,S.pending~=nil or not S.ready or S.recording or not S.config.vision_enabled)
@@ -396,11 +494,12 @@ local function settings_view()
   ImGui.TextWrapped(ctx,"Installed Main actions and scripts can be launched by name, e.g. open ReaSplice. Runs the registered action with its own behavior and undo support.")
   ImGui.Spacing(ctx)
   ImGui.BeginDisabled(ctx,S.pending~=nil or not S.ready or S.recording)
-  if ImGui.Button(ctx,"Save settings##bottom",-1,0) then
-    send("save_settings",{config=S.config,keys=S.newkeys})
-    S.newkeys={openrouter="",openai="",typesafe=""}; S.status="Saving…"; S.message=""
+  if ImGui.Button(ctx,"Save all settings",-1,0) then
+    if send("save_settings",{config=S.config,keys=S.newkeys}) then
+      S.newkeys={openrouter="",openai="",typesafe=""}; S.status="Saving…"; S.message=""
+    end
   end
-  if ImGui.SmallButton(ctx,"Refresh microphone list") then send("settings") end
+  if ImGui.SmallButton(ctx,"Refresh audio devices & voices") then send("audio_devices") end
   ImGui.EndDisabled(ctx)
   ImGui.Spacing(ctx); label(S.status)
   if S.message~="" then ImGui.TextWrapped(ctx,S.message) end
@@ -421,10 +520,25 @@ local function command_view()
     activate("talk")
   end
   ImGui.EndDisabled(ctx)
+  local voice_info=S.meter and S.meter.voice or {}
+  if voice_info.speaking then
+    if ImGui.SmallButton(ctx,"Stop voice") then voice.stop() end
+  elseif voice_info.error and voice_info.error~="" then
+    ImGui.TextWrapped(ctx,voice_info.error)
+  end
   if S.recording then
     local level=S.meter and S.meter.level or 0
     ImGui.ProgressBar(ctx,math.min(1,level*4),-1,5,"")
     if ImGui.SmallButton(ctx,"Cancel recording") then send("record_cancel") end
+  end
+  if S.config.wake_enabled and not S.disconnected then
+    local wake_info=S.meter and S.meter.wake or S.wake or {}
+    ImGui.TextWrapped(ctx,wake_info.status or "Starting wake-word detector…")
+    if S.recording then
+      label("Say “"..(S.config.wake_stop_phrase or "execute").."” to stop & send")
+    elseif ImGui.SmallButton(ctx,S.wake_paused and "Resume wake word" or "Pause wake word") then
+      S.wake_paused=not S.wake_paused
+    end
   end
   ImGui.Spacing(ctx); label(S.status)
   if S.message~="" then ImGui.TextWrapped(ctx,S.message) end
@@ -466,7 +580,13 @@ end
 local dock=tonumber(R.GetExtState("HeyComputer","dock"))
 if not dock then dock=tonumber(R.GetExtState("ReaJev","dock")) end
 local first=true
+local function check_helper()
+  if S.disconnected or not Runtime.available(S.ready,function(name) return read(inbox.."/"..name) end) then
+    Runtime.disconnect(S)
+  end
+end
 local function frame()
+  check_helper()
   -- Read actions before processing worker replies, so a busy-period action is
   -- discarded even if that job completes during this frame.
   local action=Actions.take(session,S)
@@ -474,8 +594,18 @@ local function frame()
   local remote_action=remote.take(S)
   if remote_action=="start" or remote_action=="stop" then activate("talk")
   elseif remote_action=="cancel" then send("record_cancel") end
+  local wake_event=wake.take(S)
+  if wake_event then
+    if wake_event.action=="start" then
+      send("record_start",{wake_event=wake_event.id}); S.status="Opening microphone…"
+    elseif wake_event.action=="stop" then submit(true,S.config.wake_stop_phrase)
+    elseif wake_event.action=="cancel" then send("record_cancel",{reason=wake_event.reason}) end
+  end
   test_bridge.take(S,submit)
   poll()
+  -- A native action/dialog may have blocked this frame long enough for the
+  -- helper to exit. Check again before publishing or accepting more work.
+  check_helper()
   if R.time_precise()-last_theme>.75 then palette=Theme.palette(); last_theme=R.time_precise() end
   local colors=Theme.push(ImGui,ctx,palette)
   ImGui.PushStyleVar(ctx,ImGui.StyleVar_WindowPadding,12,12)
@@ -515,8 +645,10 @@ local function frame()
   end
   ImGui.PopStyleVar(ctx,3); ImGui.PopStyleColor(ctx,colors)
   Actions.publish(session,S)
-  if R.time_precise()-last_remote>.2 then
-    remote.publish(S); test_bridge.publish(S); last_remote=R.time_precise()
+  if not S.disconnected and R.time_precise()-last_remote>.2 then
+    remote.publish(S); test_bridge.publish(S); wake.publish(S)
+    voice.publish(S)
+    last_remote=R.time_precise()
   end
   if open then R.defer(frame) end
 end
@@ -528,6 +660,10 @@ R.atexit(function()
   os.remove(inbox.."/test-state.json")
   os.remove(inbox.."/test-command.json")
   os.remove(inbox.."/test-rejected.json")
+  os.remove(inbox.."/wake-state.json")
+  os.remove(inbox.."/wake-event.json")
+  os.remove(inbox.."/speech-state.json")
+  os.remove(inbox.."/speech-command.json")
   pcall(write,inbox.."/shutdown.request.json",json.encode({id="shutdown",kind="shutdown"}))
   S.newkeys={}
 end)

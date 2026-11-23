@@ -5,7 +5,7 @@ import re
 from .protocol import PlanError, action
 
 EXTENDED = {"transport", "seek", "set_range", "repeat", "marker_add", "region_add", "marker_update",
-            "item_name", "item_color", "item_gain", "track_color", "send_create", "send_set",
+            "item_name", "item_color", "item_gain", "item_select", "track_color", "track_visibility", "send_create", "send_set",
             "send_delete", "save", "run_action", "launch_action"}
 
 
@@ -56,7 +56,7 @@ def tracks(target, snapshot, created):
         require(target in {t["guid"] for t in snapshot.get("tracks", [])}, "Track unavailable.")
 
 
-def validate_extended(a, snapshot, created, index, actions):
+def validate_extended(a, snapshot, created, index, actions, resolve=None, resolve_items=None):
     op, target, value = a["op"], a["target"], a["value"]
     if op not in EXTENDED:
         return False
@@ -97,8 +97,18 @@ def validate_extended(a, snapshot, created, index, actions):
         if "loop" in p: require(type(p["loop"]) is bool)
         if op == "marker_update": require(target in {m["key"] for m in snapshot.get("markers", [])}, "Marker or region unavailable.")
     elif op.startswith("item_"):
+        from .item_targets import validate_query
         items = snapshot.get("items", [])
-        if target == "selected": require(any(i["selected"] for i in items), "Select the items first.")
+        if op == "item_select":
+            require(snapshot.get('item_queries_available'), 'Reopen HeyComputer to enable native item selection.')
+            require(index == len(actions)-1, 'Make explicit item selection the last step; edit items directly first.')
+            require(value in {'replace', 'add', 'remove', 'clear'}, 'Choose replace, add, remove or clear selection.')
+            if value == 'clear':
+                require(target == 'project', 'Clear selection targets the project.')
+                return True
+        if validate_query(target, snapshot): pass
+        elif resolve_items: resolve_items(target)
+        elif target == "selected": require(any(i["selected"] for i in items), "Select the items first.")
         elif target == "all": require(bool(items) and not snapshot.get("items_truncated"), "Too many items; select a smaller set.")
         else: require(target in {i["guid"] for i in items}, "Item unavailable.")
         if op == "item_name": require(bool(value) and len(value) <= 512)
@@ -107,13 +117,21 @@ def validate_extended(a, snapshot, created, index, actions):
             p = params(value, {"db", "relative"}, {"db", "relative"})
             require(number(p["db"], -150, 24) and type(p["relative"]) is bool)
     elif op == "track_color":
-        tracks(target, snapshot, created); require(color(value))
+        resolve(target) if resolve else tracks(target, snapshot, created)
+        require(color(value))
+    elif op == "track_visibility":
+        resolve(target) if resolve else tracks(target, snapshot, created)
+        p = params(value, {"tcp", "mcp"})
+        require(bool(p) and all(type(v) is bool for v in p.values()), "Specify track panel and/or mixer visibility as true or false.")
     elif op.startswith("send_"):
-        tracks(target, snapshot, created)
+        resolve(target) if resolve else tracks(target, snapshot, created)
         p = params(value, {"destination", "volume_db", "pan", "mode", "mute"}, {"destination"})
         dest = p["destination"]
         require(isinstance(dest, str) and dest not in {"selected", "all", "created"}, "A send needs one destination track.")
-        tracks(dest, snapshot, created)
+        if resolve:
+            require(len(resolve(dest)) == 1, "A send needs one destination track.")
+        else:
+            tracks(dest, snapshot, created)
         if "volume_db" in p: require(number(p["volume_db"], -150, 12))
         if "pan" in p: require(number(p["pan"], -1, 1))
         if "mode" in p: require(p["mode"] in {"post_fader", "post_fx", "pre_fx"})
@@ -132,7 +150,8 @@ seek value {"bars":-4,"preserve_beat":false} moves relative to the current play 
 set_range value {"start":position,"end":position,"loop":true/false}. Always sets time selection; loop=true also sets loop points and enables repeat. loop=false disables repeat for the selected area. repeat value on/off.
 marker_add value {"at":position,"name":"Verse","color":"#RRGGBB" or "default"}. region_add has start,end,name,color. marker_update target=exact snapshot marker/region key, value contains name and/or color, preserves position and omitted properties. Use sensible standard RGB colors for ordinary named colors; don't ask for hex values unnecessarily.
 item_name target selected/all/exact item GUID, value nonempty literal name; edits active take name (empty items use notes). item_color same targets, value #RRGGBB or default. item_gain same targets, value {"db":-6,"relative":true}; relative=false sets absolute item gain. track_color target track selectors/GUID, value #RRGGBB or default.
-send_create/send_set/send_delete target SOURCE track selectors/GUID, value {"destination":exact track GUID or first_created,"volume_db":-12,"pan":0,"mode":"post_fader"|"post_fx"|"pre_fx","mute":false}. Optional properties are preserved for send_set; send_create defaults to stereo 1/2, post-fader, unity, centered, unmuted with MIDI disabled. send_delete takes destination only. No self/feedback sends, no hardware outputs or channel remapping. Multiple existing sends to the same destination require clarification. Use create_tracks + send_create for a new bus, first_created as destination. Never disable source master send unless requested; that feature isn't supported yet.
+track_visibility target any track selector/GUID or earlier result:N / result:N:K, value={"tcp":false,"mcp":false}. true shows, false hides. TCP is the track panel beside the arrange/timeline; MCP is the mixer. Include only the requested panel; omitted panels remain unchanged. Unqualified 'hide/show tracks' means BOTH panels. 'Show all tracks' targets all existing tracks, including hidden ones. Snapshot tracks include visibility.tcp/mcp flags; read them to answer visibility questions or target currently hidden tracks. These are visibility settings, not screen presence: folder collapse and mixer display filters are independent and are not changed. Hiding does not mute, solo, delete, change routing or select tracks. Prefer this native operation for ordinary hide/show commands, including mixed plans; no SWS or GUI is needed. Explicit requests to run a named SWS action still use launch_action. Do not silently hide/show other tracks or folder descendants unless requested.
+send_create/send_set/send_delete target SOURCE track selectors/GUID, value {"destination":exact track GUID, first_created, or single-track earlier result:N / result:N:K,"volume_db":-12,"pan":0,"mode":"post_fader"|"post_fx"|"pre_fx","mute":false}. Optional properties are preserved for send_set; send_create defaults to stereo 1/2, post-fader, unity, centered, unmuted with MIDI disabled. send_delete takes destination only. No self/feedback sends, no hardware outputs or channel remapping. Multiple existing sends to the same destination require clarification. Use create_tracks + send_create for a new bus, first_created or a single earlier result reference as destination. Never disable source master send unless requested; that feature isn't supported yet.
 save value current/new_version. New versions use the next unused _vNNN.rpp filename beside the current project and switch to it. Unsaved projects open the native Save As dialog and require the user to finish it. Saving and transport must be the LAST operation; only one terminal operation per plan.
 run_action value an exact id STRING from project.actions. Run this alone, not mixed with other operations. These are installed, supported Main-section actions only; use them for splitting/duplicating/trimming/normalizing items, selection, zoom, snapping, grid, metronome, etc. Respect each action's requires field and current selection; never guess an action number. Prefer structured operations above. Actions needing dialogs cannot fill them automatically. If no suitable supported action exists, explain the limitation rather than improvising a script outside lua_api.
 launch_action value is an exact id STRING from project.launch_actions, target=project. This catalog includes installed Main actions, registered scripts, custom actions and extension actions. Use ONLY when the user explicitly requests running/opening a named action, tool or script (e.g. 'open ReaSplice'). Return one launch_action by itself; never combine with edits or infer an arbitrary script from a general editing goal. Prefer the exact main tool over similarly named reload/update/uninstall/helper scripts; clarify ambiguous matches. Term definitions/preferences can associate a spoken tool name with its installed action. Running an installed script does not require enabling reviewed custom Lua. Never invent a command ID or load a script from a file path. Say the action ran, not that its internal work or window opening was verified. A launcher starts a tool; it does not grant sample-browser search or control of the tool's internals. If the user also requests unsupported work inside the tool, explain that limitation before doing a partial launch.
@@ -160,6 +179,21 @@ def quick_plan(text, snapshot):
         if len(matches) == 1:
             return {"kind": "plan", "actions": [action("launch_action", "project", matches[0]["id"])],
                     "message": "", "lua": "", "model": "Direct command"}
+    visibility = re.fullmatch(r"(?:please\s+)?(hide|show|unhide)\s+(?:the\s+)?(selected tracks?(?:\(s\))?|all tracks?(?:\(s\))?|this track|these tracks)"
+                              r"(?:\s+(?:in|from|on)\s+(?:the\s+)?(tcp|mcp|mixer|track panel|arrange(?:ment)?(?: view)?|both(?: panels)?))?"
+                              r"(?:\s+please)?", normalized)
+    if visibility:
+        verb, target, panel = visibility.groups()
+        selected = [t for t in snapshot.get("tracks", []) if t.get("selected")]
+        # Leave ambiguous pointing words to conversational context. Never pick
+        # the first of several selected tracks for a singular request.
+        if target == "this track" and len(selected) != 1 or target == "these tracks" and not selected:
+            return None
+        target = "all" if target.startswith("all ") else "selected"
+        fields = ("tcp",) if panel in ("tcp", "track panel", "arrange", "arrange view", "arrangement", "arrangement view") else ("mcp",) if panel in ("mcp", "mixer") else ("tcp", "mcp")
+        value = json.dumps({k: verb != "hide" for k in fields})
+        return {"kind": "plan", "actions": [action("track_visibility", target, value)],
+                "message": "", "lua": "", "model": "Direct command"}
     commands = {"play": ("transport", "play"), "start playback": ("transport", "play"),
                 "stop": ("transport", "stop"), "stop playback": ("transport", "stop"),
                 "stop recording": ("transport", "stop"), "record": ("transport", "record"),

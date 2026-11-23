@@ -19,7 +19,11 @@ PRESETS = {
 }
 KEY_PROVIDERS = ("openrouter", "typesafe", "openai")
 DEFAULTS = {"use_jev": True, "allow_lua": False, "mic_device": "", "mic_channel": 1, "aliases": "", "speech_corrections": "",
-            "remote_enabled": False, "remote_port": 8765, "vision_enabled": False, "ui_memory_enabled": True}
+            "remote_enabled": False, "remote_port": 8765, "vision_enabled": False, "ui_memory_enabled": True,
+            "wake_enabled": False, "wake_phrase": "hey computer", "wake_stop_phrase": "execute",
+            "wake_threshold": 0.35, "wake_log_enabled": True,
+            "speech_enabled": False, "speech_voice": "", "speech_device": "",
+            "speech_channel": 1, "speech_channels": 2, "speech_volume": .2}
 for service, presets in PRESETS.items():
     DEFAULTS[service + "_provider"] = "openrouter"
     for field, value in presets["openrouter"].items():

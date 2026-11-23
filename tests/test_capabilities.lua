@@ -211,6 +211,32 @@ test("new bus can receive sends from the captured track selection",function()
   run({a("create_tracks","Reverb","created",1),a("send_create",{destination="first_created"},"selected")})
   assert(R.CountTracks(0)==2 and src.sends[1].destination==R.GetTrack(0,1).guid)
 end)
+test("new effect return and send execute before exact plugin inspection",function()
+  local src=newtrack("Guitar"); src.selected=true
+  local ok,msg,receipt=E.execute({a("create_tracks","Guitar Delay","created",1),
+    a("add_fx","VST3: Pro-Q 4","created"),
+    a("send_create",{destination="first_created"},src.guid),
+    a("inspect_fx","last_added","created")},E.snapshot())
+  assert(ok,msg)
+  local dest=R.GetTrack(0,1)
+  assert(R.CountTracks(0)==2 and #src.fx==0 and #dest.fx==1)
+  assert(#src.sends==1 and src.sends[1].destination==dest.guid)
+  assert(src.sends[1].I_MIDIFLAGS==31 and src.sends[1].I_SENDMODE==0)
+  assert(receipt.fx_parameters[1].track==dest.guid)
+  assert(receipt.fx_parameters[1].guid==R.TrackFX_GetFXGUID(dest,0))
+end)
+test("failed inspection rolls back the newly created return and send",function()
+  local src=newtrack("Guitar")
+  local FX=require('fx_parameters');local inspect=FX.inspect
+  FX.inspect=function() error('fixture inspection failure') end
+  local ok,msg=E.execute({a("create_tracks","Guitar Delay","created",1),
+    a("add_fx","VST3: Pro-Q 4","created"),
+    a("send_create",{destination="first_created"},src.guid),
+    a("inspect_fx","last_added","created")},E.snapshot())
+  FX.inspect=inspect
+  assert(not ok and msg:find('rolled back'),msg)
+  assert(R.CountTracks(0)==1 and not src.sends and #src.fx==0)
+end)
 test("feedback, duplicate sends and later invalid operations are rejected before edits",function()
   local a1,b=newtrack("A"),newtrack("B")
   local ok=E.execute({a("send_create",{destination=b.guid},a1.guid),a("send_create",{destination=a1.guid},b.guid)},E.snapshot())

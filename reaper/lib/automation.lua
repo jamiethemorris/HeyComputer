@@ -17,7 +17,22 @@ local function track(guid)
   for i=0,R.CountTracks(0)-1 do local tr=R.GetTrack(0,i);if R.GetTrackGUID(tr)==guid then return tr end end
   error('Automation track is unavailable.',0)
 end
+local function send_for(tr,e)
+  local destination=track(e.destination)
+  local index
+  for i=0,R.GetTrackNumSends(tr,0)-1 do
+    if R.GetTrackSendInfo_Value(tr,0,i,'P_DESTTRACK')==destination then
+      check(index==nil,'Send automation needs one unambiguous existing track send.');index=i
+    end
+  end
+  check(index~=nil,'The requested track send is unavailable.')
+  return index,destination
+end
 local function env_for(tr,e,create)
+  if e.kind=='send_volume' then
+    local index=send_for(tr,e)
+    return R.GetTrackSendInfo_Value(tr,0,index,'P_ENV:<VOLENV')
+  end
   if e.kind=='fx' then
     local _,fx=FX.find(R.GetTrackGUID(tr),e.fx)
     local ok,name=R.TrackFX_GetParamName(tr,fx,e.index)
@@ -42,9 +57,19 @@ local function safe_envelope(env)
   end
 end
 local function selector(e,s,target)
-  check(type(e)=='table' and (chunks[e.kind] or e.kind=='fx'),'Unsupported envelope type.')
-  for k in pairs(e) do check(k=='kind' or e.kind=='fx' and ({fx=true,index=true,name=true})[k]) end
-  if e.kind=='fx' then
+  check(type(e)=='table' and (chunks[e.kind] or e.kind=='fx' or e.kind=='send_volume'),'Unsupported envelope type.')
+  for k in pairs(e) do check(k=='kind' or e.kind=='fx' and ({fx=true,index=true,name=true})[k] or e.kind=='send_volume' and k=='destination') end
+  if e.kind=='send_volume' then
+    check(type(e.destination)=='string','Send automation needs an exact destination track GUID.')
+    local source,destination
+    for _,t in ipairs(s.tracks) do
+      if t.guid==target then source=t end
+      if t.guid==e.destination then destination=t end
+    end
+    check(source and destination,'Send automation needs exact existing source and destination track GUIDs.')
+    local count=0;for _,send in ipairs(source.sends or {}) do if send.destination==e.destination then count=count+1 end end
+    check(count==1,'Send automation needs one unambiguous existing track send.')
+  elseif e.kind=='fx' then
     check(type(e.fx)=='string' and finite(e.index) and e.index%1==0 and type(e.name)=='string')
     local found
     for _,c in ipairs(s.fx_parameters or {}) do if c.track==target and c.guid==e.fx then
@@ -55,7 +80,7 @@ local function selector(e,s,target)
 end
 local function builtin_value(kind,value)
   local s=value:lower():match('^%s*(.-)%s*$')
-  if kind=='volume' then
+  if kind=='volume' or kind=='send_volume' then
     if s=='-inf db' then return 0 end
     local db=tonumber(s:match('^([%+%-]?%d*%.?%d+)%s*db$'))
     check(finite(db) and db>=-150 and db<=12,'Volume automation must be -150 to +12 dB, or -inf dB.')
@@ -76,13 +101,30 @@ function M.snapshot(s)
   for _,t in ipairs(s.tracks) do
     local tr=track(t.guid)
     t.automation={mode=R.GetTrackAutomationMode(tr),envelopes={}}
-    for i=0,math.min(R.CountTrackEnvelopes(tr),64)-1 do
-      local env=R.GetTrackEnvelope(tr,i)
+    local envelopes,seen,sends={},{},{}
+    local function include(env)
+      if env and not seen[env] then seen[env]=true;envelopes[#envelopes+1]=env end
+    end
+    local count=R.CountTrackEnvelopes(tr)
+    for i=0,math.min(count,64)-1 do include(R.GetTrackEnvelope(tr,i)) end
+    local send_count=R.GetTrackNumSends and R.GetTrackNumSends(tr,0) or 0
+    for i=0,math.min(send_count,64)-1 do
+      local env=R.GetTrackSendInfo_Value(tr,0,i,'P_ENV:<VOLENV')
+      local destination=R.GetTrackSendInfo_Value(tr,0,i,'P_DESTTRACK')
+      if env and destination then
+        include(env)
+        sends[env]={selector={kind='send_volume',destination=R.GetTrackGUID(destination)},
+          volume=R.GetTrackSendInfo_Value(tr,0,i,'D_VOL')}
+      end
+    end
+    for i=1,math.min(#envelopes,64) do
+      local env=envelopes[i]
       local _,name=R.GetEnvelopeName(env)
       local _,fx,p=R.Envelope_GetParentTrack(env)
       local e={name=name,active=attr(env,'ACTIVE'),visible=attr(env,'VISIBLE'),armed=attr(env,'ARM'),
         count=R.CountEnvelopePoints(env),automation_items=R.CountAutomationItems(env),points={}}
-      if fx and fx>=0 then
+      if sends[env] then e.selector=sends[env].selector
+      elseif fx and fx>=0 then
         local _,pname=R.TrackFX_GetParamName(tr,fx,p)
         e.selector={kind='fx',fx=R.TrackFX_GetFXGUID(tr,fx),index=p,name=pname}
       else
@@ -95,20 +137,28 @@ function M.snapshot(s)
       e.truncated=#e.points<e.count
       if s.timeline then
         local _,v=R.Envelope_Evaluate(env,s.timeline.cursor,44100,1)
+        if sends[env] and e.count==0 then
+          v=R.ScaleToEnvelopeMode(R.GetEnvelopeScalingMode(env),sends[env].volume)
+        end
         e.at_cursor=R.Envelope_FormatValue(env,v)
       end
       t.automation.envelopes[#t.automation.envelopes+1]=e
     end
-    t.automation.truncated=R.CountTrackEnvelopes(tr)>64
+    t.automation.truncated=count>64 or send_count>64 or #envelopes>64
   end
 end
-function M.prepare(actions,s)
-  local prepared,edited,created={},{},false
-  for _,a in ipairs(actions) do
+function M.prepare(actions,s,refs)
+  local prepared,edited,created,send_automation={},{},false,false
+  for index,a in ipairs(actions) do
     if a.op=='create_tracks' then created=true end
     if M.ops[a.op] then
     local known=false;for _,t in ipairs(s.tracks) do if t.guid==a.target then known=true end end
     local new_target=created and (a.target=='created' or a.target=='first_created')
+    local resolved=refs and refs:resolve(a.target,index)
+    if resolved then
+      known=#resolved==1 and not resolved[1].planned and resolved[1].guid==a.target
+      new_target=not known
+    end
     check(known or new_target,'Identify the automation track or create it earlier in the plan.')
     local tr=not new_target and track(a.target) or nil
     if a.op=='automation_mode' then
@@ -122,10 +172,17 @@ function M.prepare(actions,s)
       elseif a.op=='automation_clear' then allowed={envelope=true,start=true,['end']=true};required={'envelope','start','end'}
       else allowed={envelope=true,active=true,visible=true,armed=true};required={'envelope'} end
       local p=object(a.value,allowed,required);selector(p.envelope,s,a.target)
+      check(p.envelope.kind~='send_volume' or known and not new_target,'Send automation needs one exact existing source track GUID.')
+      if p.envelope.kind=='send_volume' then send_automation=true end
       check(not new_target or p.envelope.kind~='fx','Inspect the newly created plugin before automating its parameters.')
-      p.track=tr;p.new_target=new_target;edited[a.target]=true
-      if new_target then edited.created=true;edited.first_created=true end
-      p.existing=tr and env_for(tr,p.envelope,false) or nil;safe_envelope(p.existing)
+      p.track=tr;p.new_target=new_target
+      if p.envelope.kind=='fx' then
+        edited[a.target]=true
+        if resolved then for _,t in ipairs(resolved) do edited[t.guid]=true end end
+      end
+      p.existing=tr and env_for(tr,p.envelope,false) or nil
+      check(p.envelope.kind~='send_volume' or p.existing,'Native send envelopes are unavailable in this REAPER version.')
+      safe_envelope(p.existing)
       if p.envelope.kind=='fx' then
         local _,fx=FX.find(a.target,p.envelope.fx)
         check(not R.TrackFX_GetOffline(tr,fx),'Bring the plugin online before automating it.')
@@ -163,11 +220,21 @@ function M.prepare(actions,s)
       prepared[a]=p
     end
   end end
-  for _,a in ipairs(actions) do
+  for index,a in ipairs(actions) do
+    if send_automation then
+      check(not ({send_create=true,send_set=true,send_delete=true,create_tracks=true,
+        duplicate_tracks=true,folder_tracks=true,folder_created=true})[a.op],
+        'Edit routing and track structure separately, then use fresh state for send automation.')
+    end
     if ({add_fx=true,delete_fx=true,offline_fx=true,move_fx=true,copy_fx=true})[a.op] then
       local dest
       if a.op=='move_fx' or a.op=='copy_fx' then dest=json.decode(a.value).destination end
       check(not edited[a.target] and not edited[dest],'Edit plugin chains separately from automation on those tracks.')
+      if refs then
+        for _,key in ipairs({a.target,dest}) do
+          for _,t in ipairs(refs:resolve(key,index)) do check(not edited[t.guid],'Edit plugin chains separately from automation on those tracks.') end
+        end
+      end
     end
   end
   return prepared
@@ -188,12 +255,29 @@ local function remove_points(env,first,last)
 end
 local function apply_track(a,p,remember)
   remember(p.track)
+  if p.envelope and p.envelope.kind=='send_volume' then
+    local _,destination=send_for(p.track,p.envelope)
+    remember(destination) -- Send envelopes belong to the destination track's chunk.
+  end
   if a.op=='automation_mode' then
     R.SetTrackAutomationMode(p.track,p.mode)
     check(R.GetTrackAutomationMode(p.track)==p.mode,'REAPER did not retain the automation mode.')
     return
   end
   local env=env_for(p.track,p.envelope,false)
+  if p.envelope.kind=='send_volume' then
+    check(env,'Native send envelopes are unavailable in this REAPER version.')
+    if a.op~='automation_clear' and R.CountEnvelopePoints(env)==0 then
+      local index=send_for(p.track,p.envelope)
+      local baseline=R.GetTrackSendInfo_Value(p.track,0,index,'D_VOL')
+      check(finite(baseline) and baseline>=0,'The static send volume is unavailable.')
+      local value=R.ScaleToEnvelopeMode(R.GetEnvelopeScalingMode(env),baseline)
+      -- Hold the old level until the first requested point; do not introduce an early fade.
+      check(R.InsertEnvelopePoint(env,0,value,shapes.square,0,false,true),'Could not preserve the static send volume.')
+      local ok,time,retained=R.GetEnvelopePoint(env,0)
+      check(ok and time==0 and math.abs(retained-value)<1e-7,'REAPER did not retain the static send baseline.')
+    end
+  end
   if not env then
     if a.op=='automation_clear' then return end
     if p.envelope.kind=='fx' then env=env_for(p.track,p.envelope,true) else env=create_builtin(p.track,p.envelope) end

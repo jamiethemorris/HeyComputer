@@ -5,6 +5,9 @@ local Cap = require("capabilities")
 local FX = require("fx_parameters")
 local Chain = require("fx_chain")
 local Automation = require("automation")
+local Tracks = require("track_plan")
+local MIDI = require("midi")
+local ItemRepeat = require("item_repeat")
 local READ_API = {"CountTracks", "GetTrack", "GetTrackGUID", "GetTrackName", "GetMediaTrackInfo_Value",
   "GetSetMediaTrackInfo_String", "TrackFX_GetCount", "TrackFX_GetFXName", "TrackFX_GetNumParams",
   "TrackFX_GetParamName", "TrackFX_GetParam", "TrackFX_GetParamNormalized", "TrackFX_GetEnabled",
@@ -31,6 +34,7 @@ function M.snapshot()
       number=i+1,volume=R.GetMediaTrackInfo_Value(tr,"D_VOL"),
       muted=R.GetMediaTrackInfo_Value(tr,"B_MUTE")~=0,solo=R.GetMediaTrackInfo_Value(tr,"I_SOLO"),
       color=R.GetMediaTrackInfo_Value(tr,"I_CUSTOMCOLOR"),folder_depth=R.GetMediaTrackInfo_Value(tr,"I_FOLDERDEPTH"),
+      visibility={tcp=R.GetMediaTrackInfo_Value(tr,"B_SHOWINTCP")~=0,mcp=R.GetMediaTrackInfo_Value(tr,"B_SHOWINMIXER")~=0},
       channels=R.GetMediaTrackInfo_Value(tr,"I_NCHAN"),monitoring=R.GetMediaTrackInfo_Value(tr,"I_RECMON"),
       record_mode=R.GetMediaTrackInfo_Value(tr,"I_RECMODE"),master_parent_send=R.GetMediaTrackInfo_Value(tr,"B_MAINSEND")~=0}
   end
@@ -48,6 +52,8 @@ function M.snapshot()
   for _, name in ipairs(WRITE_API) do s.lua_api[#s.lua_api + 1] = name end
   Cap.snapshot(s,project)
   Automation.snapshot(s)
+  MIDI.snapshot(s,project)
+  s.item_repeat_available=ItemRepeat.available()
   return s
 end
 
@@ -62,6 +68,9 @@ local OPS = {create_tracks=true, folder_created=true, pan=true, add_fx=true, ope
 for op in pairs(Cap.ops) do OPS[op]=true end
 for op in pairs(Chain.ops) do OPS[op]=true end
 for op in pairs(Automation.ops) do OPS[op]=true end
+for op in pairs(Tracks.ops) do OPS[op]=true end
+for op in pairs(MIDI.ops) do OPS[op]=true end
+for op in pairs(ItemRepeat.ops) do OPS[op]=true end
 
 function M.validate(actions, snapshot)
   if type(actions) ~= "table" or #actions < 1 or #actions > 64 then fail("Invalid action plan.") end
@@ -69,44 +78,33 @@ function M.validate(actions, snapshot)
   for _, t in ipairs(snapshot.tracks) do guids[t.guid] = true; if t.selected then selected = selected + 1 end end
   for _, p in ipairs(snapshot.plugins) do plugins[p.id] = true end
   for _, i in ipairs(snapshot.inputs) do inputs[tostring(i.index)] = true end
-  local created, folder,created_count = false, false,0
+  for _,a in ipairs(actions) do
+    if type(a)~='table' or not OPS[a.op] or type(a.target)~='string' or type(a.value)~='string'
+      or type(a.count)~='number' or a.count%1~=0 or #a.value>4096 or #a.target>8192
+      or a.op~='create_tracks' and a.op~='duplicate_tracks' and a.count~=0 then fail('Invalid operation.') end
+  end
+  local tracks=Tracks.prepare(actions,snapshot)
   for ai, a in ipairs(actions) do
     if type(a) ~= "table" or not OPS[a.op] or type(a.target) ~= "string" or type(a.value) ~= "string" or type(a.count) ~= "number" then fail("Invalid operation.") end
-    if #a.value>4096 or a.op~="create_tracks" and a.count~=0 then fail("Invalid action value.") end
+    if #a.value>4096 or a.op~="create_tracks" and a.op~="duplicate_tracks" and a.count~=0 then fail("Invalid action value.") end
     if snapshot.timeline and snapshot.timeline.play_state&4~=0 and not Cap.ops[a.op] then fail("Stop recording before editing tracks.") end
     if Cap.ops[a.op] then -- independently preflighted below
-    elseif a.op == "create_tracks" then
-      if created or a.count % 1 ~= 0 or a.count < 1 or a.count > 64 then fail("Create 1–64 tracks in one batch.") end
-      created = true; created_count=a.count
-    elseif a.op == "folder_created" then
-      if not created or folder then fail("Create the child tracks before their folder.") end
-      folder = true
+    elseif MIDI.ops[a.op] then -- independently preflighted below
+    elseif ItemRepeat.ops[a.op] then -- independently preflighted below
+    elseif Tracks.ops[a.op] then -- resolved in plan order above
     else
-      if a.target == "created" or a.target == "first_created" then
-        if not created then fail("This plan references tracks that do not exist yet.") end
-      elseif a.target == "selected" then
-        if selected == 0 then fail("Select the tracks you want to change first.") end
-      elseif a.target == "all" then
-        if #snapshot.tracks == 0 then fail("There are no existing tracks.") end
-      elseif not guids[a.target] then fail("The target track could not be found.") end
+      local matches=tracks:resolve(a.target,ai)
       if a.op == "add_fx" and not plugins[a.value] then fail("A requested plugin is unavailable.") end
       if a.op == "open_fx" or a.op == "inspect_fx" then
         if ai~=#actions or not R.TrackFX_GetFXGUID then fail("Open or inspect a plugin only as the last operation.") end
         if a.op=="open_fx" and (not R.TrackFX_Show or not R.TrackFX_GetFloatingWindow) then fail("Plugin window APIs are unavailable.") end
-        local matches={}
-        if a.target=="created" or a.target=="first_created" then
-          local n=a.target=="first_created" and 1 or created_count
-          for i=1,n do matches[#matches+1]={} end
-        else
-          for _,t in ipairs(snapshot.tracks) do
-            if a.target==t.guid or a.target=="all" or a.target=="selected" and t.selected then matches[#matches+1]=t end
-          end
-        end
         if #matches~=1 then fail("Open one plugin on exactly one track.") end
         local found=false
         if a.value=="last_added" then
           for i=1,ai-1 do local p=actions[i]
-            if p.op=="add_fx" and (p.target==a.target or p.target=="created" and a.target=="first_created") then found=true end
+            if p.op=='add_fx' then
+              for _,t in ipairs(tracks:resolve(p.target,i)) do if t.guid==matches[1].guid then found=true end end
+            end
           end
         else
           for _,fx in ipairs(matches[1].fx_instances or {}) do if fx.guid==a.value then found=true end end
@@ -123,10 +121,14 @@ function M.validate(actions, snapshot)
       end
     end
   end
-  local chain_prepared=Chain.prepare(actions,snapshot)
-  local prepared=Cap.prepare(actions,snapshot)
+  local chain_prepared=Chain.prepare(actions,snapshot,tracks)
+  local midi_prepared,items=MIDI.prepare(actions,snapshot,tracks)
+  local prepared=Cap.prepare(actions,snapshot,tracks,items)
+  for a,v in pairs(ItemRepeat.prepare(actions,snapshot)) do prepared[a]=v end
+  for a,v in pairs(midi_prepared) do prepared[a]=v end
   for a,v in pairs(chain_prepared) do prepared[a]=v end
-  for a,v in pairs(Automation.prepare(actions,snapshot)) do prepared[a]=v end
+  for a,v in pairs(Automation.prepare(actions,snapshot,tracks)) do prepared[a]=v end
+  prepared._tracks=tracks
   for _,a in ipairs(actions) do
     if a.op=="set_fx_param" then
       local v=FX.decode(a,snapshot)
@@ -137,7 +139,7 @@ function M.validate(actions, snapshot)
   return prepared
 end
 
-local function transaction(snapshot, fn, label)
+local function transaction(snapshot, fn, label, structural)
   if not M.is_current(snapshot) then return false, "The project changed while I was working. Send the command again so I can use its current state." end
   local project = R.EnumProjects(-1, "")
   local backup=Cap.capture(project,snapshot)
@@ -168,11 +170,18 @@ local function transaction(snapshot, fn, label)
   end
   R.Undo_BeginBlock2(project)
   R.PreventUIRefresh(1)
-  local ok, err = xpcall(function() fn(project, created, remember, target, existing, backup) end, tostring)
+  local ok, err = xpcall(function()
+    if structural then for _,tr in ipairs(existing) do remember(tr) end end
+    fn(project, created, remember, target, existing, backup)
+  end, tostring)
   local rollback_ok = true
   if not ok then
     for i = #created, 1, -1 do
       if R.ValidatePtr2(project, created[i], "MediaTrack*") then R.DeleteTrack(created[i]) end
+    end
+    if structural then
+      local restored=pcall(Tracks.order,project,existing)
+      if not restored then rollback_ok=false end
     end
     for i=#saved_order,1,-1 do
       local tr=saved_order[i]
@@ -181,6 +190,10 @@ local function transaction(snapshot, fn, label)
     end
     local restored,result=pcall(Cap.restore,project,backup)
     if not restored or result==false then rollback_ok=false end
+  end
+  if structural then
+    local restored=pcall(Tracks.restore_selection,project,selected)
+    if not restored then rollback_ok=false end
   end
   R.PreventUIRefresh(-1)
   R.TrackList_AdjustWindows(false)
@@ -218,18 +231,35 @@ function M.execute(actions, snapshot)
     if not inspected then return false,tostring(result) end
     return true,"Plugin parameters inspected.",{fx_parameters={result},project=snapshot.project,revision=snapshot.revision}
   end
-  local count, inserts, automated = 0, 0, false
+  local count, inserts, automated, midi_edited, repeated = 0, 0, false, false, 0
   local added,opening,inspected,parameter_values={},nil,nil,{}
   local ok, message, receipt = transaction(snapshot, function(project, created, remember, target, existing, backup)
     local children = {}
+    local bindings,item_bindings,index={},{},0
+    for _,tr in ipairs(existing) do bindings[R.GetTrackGUID(tr)]=tr end
+    target=function(key)
+      local out={}
+      for _,t in ipairs(prepared._tracks:resolve(key,index)) do out[#out+1]=assert(bindings[t.guid],'A result track is unavailable.') end
+      return out
+    end
     local function write(tr, key, value)
       remember(tr)
       if not R.SetMediaTrackInfo_Value(tr, key, value) then fail("Could not update a track.") end
       if math.abs(R.GetMediaTrackInfo_Value(tr, key) - value) > 0.00001 then fail("REAPER did not retain the requested track setting.") end
     end
-    for _, a in ipairs(actions) do
-      if Cap.ops[a.op] then
-        Cap.apply(a,prepared[a],project,remember,target,children,backup)
+    for ai, a in ipairs(actions) do
+      index=ai
+      if Tracks.ops[a.op] then
+        local step=prepared._tracks.steps[a]
+        Tracks.apply(a,step,project,bindings,created,write,snapshot)
+        count=count+#step.outputs
+      elseif Cap.ops[a.op] then
+        Cap.apply(a,prepared[a],project,remember,target,children,backup,item_bindings)
+      elseif MIDI.ops[a.op] then
+        MIDI.apply(a,prepared[a],project,remember,target,item_bindings)
+        midi_edited=true
+      elseif ItemRepeat.ops[a.op] then
+        repeated=repeated+ItemRepeat.apply(a,prepared[a],project,remember)
       elseif Automation.ops[a.op] then
         Automation.apply(a,prepared[a],remember,function(key) return target(key,children) end)
         automated=true
@@ -239,31 +269,6 @@ function M.execute(actions, snapshot)
         local dest=Chain.destination(a,prepared[a],function(key) return target(key,children) end)
         if dest then remember(dest) end
         Chain.apply(a,prepared[a],dest)
-      elseif a.op == "create_tracks" then
-        local depth = 0
-        for _, tr in ipairs(existing) do depth = depth + R.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH") end
-        if depth ~= 0 then fail("The existing folder layout is unbalanced. Close its folders before adding this setup.") end
-        for i = 1, a.count do
-          local index = R.CountTracks(project)
-          R.InsertTrackAtIndex(index, true)
-          local tr = R.GetTrack(project, index)
-          if not tr then fail("Could not create a track.") end
-          created[#created + 1], children[#children + 1] = tr, tr
-          local name = a.value ~= "" and a.value or "Track"
-          if a.count > 1 then name = name .. " " .. i end
-          if not R.GetSetMediaTrackInfo_String(tr, "P_NAME", name, true) then fail("Could not name a new track.") end
-          write(tr, "I_FOLDERDEPTH", 0)
-          count = count + 1
-        end
-      elseif a.op == "folder_created" then
-        local index = R.GetMediaTrackInfo_Value(children[1], "IP_TRACKNUMBER") - 1
-        R.InsertTrackAtIndex(index, true)
-        local parent = R.GetTrack(project, index)
-        if not parent then fail("Could not create the folder.") end
-        created[#created + 1] = parent
-        if not R.GetSetMediaTrackInfo_String(parent, "P_NAME", a.value ~= "" and a.value or "Folder", true) then fail("Could not name the folder.") end
-        write(parent, "I_FOLDERDEPTH", 1)
-        write(children[#children], "I_FOLDERDEPTH", -1)
       else
         local targets = target(a.target, children)
         if #targets == 0 then fail("No tracks matched this operation.") end
@@ -315,8 +320,9 @@ function M.execute(actions, snapshot)
         FX.verify(tr,fx,v)
       end
     end
-  end, "HeyComputer: command")
+  end, "HeyComputer: command",prepared._tracks.structural)
   if ok then
+    receipt.items_repeated=repeated
     if inspected then receipt.fx_parameters={inspected} end
     if #parameter_values>0 then receipt.parameter_values=parameter_values end
     if opening then
@@ -337,6 +343,8 @@ function M.execute(actions, snapshot)
     local pieces = {}
     if count > 0 then pieces[#pieces + 1] = count .. (count==1 and " track created" or " tracks created") end
     if automated then pieces[#pieces+1]="automation updated" end
+    if midi_edited then pieces[#pieces+1]="MIDI updated" end
+    if repeated>0 then pieces[#pieces+1]=repeated.." audio items added" end
     if inserts > 0 then pieces[#pieces + 1] = inserts .. " plugins added" end
     message = #pieces > 0 and table.concat(pieces, ", ") .. "." or "Done."
     if terminal then

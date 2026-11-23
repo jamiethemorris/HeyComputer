@@ -1,16 +1,50 @@
 import io
 import json
+import os
 from pathlib import Path
+import sys
 import tempfile
 import time
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 import wave
 
 from heycomputer.worker import Worker, Recorder, atomic_json
 
 
 class WorkerTests(unittest.TestCase):
+    def run_without_devices(self, worker):
+        with patch.dict(sys.modules, {'heycomputer.vision_macos': SimpleNamespace(prepare_window_server=lambda: None)}), \
+             patch.object(worker.remote, 'configure'), patch.object(worker.remote, 'stop'), \
+             patch.object(worker, 'configure_wake'), patch.object(worker.recorder, 'close'), \
+             patch('heycomputer.worker.time.sleep'):
+            worker.run()
+
+    def test_stalled_reaper_leaves_a_recoverable_session_without_replaying_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worker = Worker(Path(directory) / 'session')
+            heartbeat = worker.directory / 'heartbeat'
+            heartbeat.write_text('alive')
+            os.utime(heartbeat, (time.time()-30, time.time()-30))
+            atomic_json(worker.directory / 'j1.request.json', {'id': 'j1', 'kind': 'plan', 'text': 'hide this track'})
+            with patch('heycomputer.worker.providers.plan') as provider:
+                self.run_without_devices(worker)
+                provider.assert_not_called()
+            self.assertTrue(worker.shutdown)
+            self.assertEqual(json.loads((worker.directory / 'worker-stopped.json').read_text()), {'reason': 'heartbeat_timeout'})
+            self.assertEqual([p.name for p in worker.directory.iterdir()], ['worker-stopped.json'])
+            # A late model response must not recreate a pending edit.
+            worker.complete('j1', lambda: {'kind': 'plan', 'actions': []})
+            self.assertFalse((worker.directory / 'j1.response.json').exists())
+
+    def test_explicit_panel_shutdown_still_cleans_up_its_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worker = Worker(Path(directory) / 'session')
+            atomic_json(worker.directory / 'shutdown.request.json', {'id': 'shutdown', 'kind': 'shutdown'})
+            self.run_without_devices(worker)
+            self.assertFalse(worker.directory.exists())
+
     def test_private_ipc_and_plan_roundtrip(self):
         with tempfile.TemporaryDirectory() as directory:
             worker = Worker(Path(directory) / "session")

@@ -4,10 +4,18 @@ local storage,now,notices,registrations={},100,0,{}
 local toggles,refreshes={},0
 local launches,launch_callback={},nil
 local registration_result
+local registered_actions={}
 reaper={
   GetToggleCommandStateEx=function(section,cmd) return toggles[section..":"..cmd] or -1 end,
   SetToggleCommandState=function(section,cmd,state) toggles[section..":"..cmd]=state; return true end,
-  RefreshToolbar2=function(section,cmd) assert(section==0 and (cmd==1 or cmd==9001)); refreshes=refreshes+1 end,
+  RefreshToolbar2=function(section,cmd) assert(section==0 and (cmd==1 or cmd==9001 or cmd==9002)); refreshes=refreshes+1 end,
+  SectionFromUniqueID=function(section) assert(section==0);return 'main' end,
+  kbd_enumerateActions=function(section,index)
+    assert(section=='main')
+    local action=registered_actions[index+1]
+    if action then return action[1],action[2] end
+    return 0,''
+  end,
   GetExtState=function(section,key) return storage[section..key] or "" end,
   SetExtState=function(section,key,value,persist)
     assert(persist==false,"Action messages must never persist across REAPER restarts")
@@ -38,6 +46,7 @@ local function test(name,fn)
   toggles,refreshes={},0
   launches,launch_callback={},nil
   registration_result=nil
+  registered_actions={}
   total=total+1
   fn(); print("PASS "..name)
 end
@@ -287,6 +296,23 @@ test("an older panel cannot change the current recording indicator",function()
   A.publish("old",state()); A.detach("old")
   assert(toggles["0:1"]==1)
   A.detach("new"); assert(toggles["0:1"]==0)
+end)
+
+test("wake recording lights existing Talk toolbars without a prior button press",function()
+  registered_actions={{9001,'Script: ReaJev - Talk or stop and send.lua'},
+    {9002,'Script: HeyComputer - Talk or stop and send.lua'},
+    {9003,'Script: ReaJev - Send.lua'}, {9004,'Script: HeyComputer.lua'},
+    {9005,'Custom: ReaJev - Talk or stop and send.lua'}}
+  assert(A.register('/repo/reaper'));assert(#registrations==2)
+  A.attach('wake')
+  A.publish('wake',state({recording=true}))
+  assert(toggles['0:1']==1 and toggles['0:9001']==1 and toggles['0:9002']==1)
+  assert(toggles['0:9003']==nil and toggles['0:9004']==nil and toggles['0:9005']==nil)
+  assert(#launches==0 and storage.HeyComputerActionsrequest==nil)
+  A.publish('wake',state({recording=false}))
+  assert(toggles['0:9001']==0 and toggles['0:9002']==0)
+  A.publish('wake',state({recording=true}));A.detach('wake')
+  assert(toggles['0:9001']==0 and toggles['0:9002']==0)
 end)
 
 test("existing Talk shortcut starts the renamed panel and keeps its toolbar state",function()

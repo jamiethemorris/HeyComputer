@@ -2,7 +2,7 @@
 local json = require("json")
 local M = {}
 local section = "HeyComputerActions"
-local talk_command
+local talk_commands={}
 local function get(key)
   local ok, value = pcall(json.decode, reaper.GetExtState(section,key))
   if ok and type(value)=="table" then return value end
@@ -11,9 +11,8 @@ local function put(key,value) reaper.SetExtState(section,key,json.encode(value),
 local function clear(key) reaper.DeleteExtState(section,key,false) end
 local function recording_toggle(recording)
   local legacy=get("legacy_talk")
-  local commands={talk_command or 0, legacy and legacy.command or 0}
   local seen={}
-  for _,command in ipairs(commands) do
+  local function update(command)
     if command>0 and not seen[command] then
       seen[command]=true
       local state=recording and 1 or 0
@@ -24,6 +23,8 @@ local function recording_toggle(recording)
       end
     end
   end
+  for _,command in ipairs(talk_commands) do update(command) end
+  update(legacy and legacy.command or 0)
 end
 
 function M.remember_legacy_talk(command)
@@ -45,7 +46,20 @@ end
 function M.register(dir)
   local talk=reaper.AddRemoveReaScript(true,0,dir.."/HeyComputer - Talk or stop and send.lua",false)
   local send=reaper.AddRemoveReaScript(true,0,dir.."/HeyComputer - Send.lua",true)
-  talk_command=talk
+  talk_commands={talk}
+  -- Existing toolbars can still use the old registered path/name. Discover
+  -- those actions before the first press, including after a REAPER restart.
+  -- Only update their indicators; do not run or re-register the actions.
+  if reaper.kbd_enumerateActions and reaper.SectionFromUniqueID then
+    local main=reaper.SectionFromUniqueID(0)
+    local names={['script: heycomputer - talk or stop and send.lua']=true,
+      ['script: reajev - talk or stop and send.lua']=true}
+    for i=0,100000 do
+      local command,name=reaper.kbd_enumerateActions(main,i)
+      if not command or command==0 then break end
+      if names[(name or ''):lower()] then talk_commands[#talk_commands+1]=command end
+    end
+  end
   recording_toggle(false)
   return talk~=0 and send~=0
 end

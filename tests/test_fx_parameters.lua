@@ -32,6 +32,13 @@ local function setting(cat,index,value,exact)
   return a('set_fx_param',cat.track,json.encode({fx=cat.guid,index=index,name=names[index+1],value=value,exact=exact or false}))
 end
 local passed=0
+local function equal(a,b)
+  if type(a)~=type(b) then return false end
+  if type(a)~='table' then return a==b end
+  for k,v in pairs(a) do if not equal(v,b[k]) then return false end end
+  for k in pairs(b) do if a[k]==nil then return false end end
+  return true
+end
 local function test(name,fn) fn(); passed=passed+1; print('PASS '..name) end
 test('inspection is read-only and reports real parameter choices',function()
   local s,c=setup(); local before=reaper.GetProjectStateChangeCount(); local w=writes
@@ -64,12 +71,12 @@ test('uninspected parameter and renamed layout are rejected',function()
   s.fx_parameters={c}; names[2]='Changed'; assert(not E.execute({op},s)); names[2]='Band 1 Frequency'; assert(writes==w)
 end)
 test('failed readback rolls back earlier parameter edits',function()
-  local s,c=setup(); local tr=FX.find(c.track,c.guid); local before=json.encode(tr)
+  local s,c=setup(); local tr=FX.find(c.track,c.guid); local before=json.decode(json.encode(tr))
   local setter=reaper.TrackFX_SetParamNormalized
   reaper.TrackFX_SetParamNormalized=function(t,f,p,n) if p==2 then return true end; return setter(t,f,p,n) end
   local ok,msg=E.execute({setting(c,1,'300 Hz'),setting(c,2,'3 dB')},s)
   reaper.TrackFX_SetParamNormalized=setter
-  assert(not ok and msg:find('rolled back')); assert(json.encode(tr)==before)
+  assert(not ok and msg:find('rolled back')); assert(equal(tr,before))
 end)
 test('exact requests reject unrepresentable decimals while approximate requests work',function()
   local s,c=setup(); local w=writes

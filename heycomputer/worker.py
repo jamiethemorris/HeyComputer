@@ -1,12 +1,10 @@
 """Private file-based IPC keeps REAPER's UI/audio threads free of network I/O."""
 import argparse
-import io
 import json
 import os
 from pathlib import Path
 import threading
 import time
-import wave
 
 from . import providers
 from .protocol import PlanError
@@ -14,6 +12,9 @@ from .settings import DEFAULTS, PRESETS, KEY_PROVIDERS, load_config, service_con
 from .remote import RemoteControl
 from .speech import correction_pairs, correct_text
 from .migration import import_legacy_settings
+from .audio import Recorder
+from .wake import ActivationLog, WakeListener, phrases, strip_stop_phrase
+from .voice_output import VoiceOutput, validate as validate_voice, FIELDS as VOICE_FIELDS
 
 
 def atomic_json(path, value):
@@ -21,88 +22,6 @@ def atomic_json(path, value):
     temp.write_text(json.dumps(value), encoding="utf-8")
     os.chmod(temp, 0o600)
     temp.replace(path)
-
-
-class Recorder:
-    def __init__(self):
-        self.stream = None
-        self.chunks = []
-        self.level = 0.0
-        self.peak = 0.0
-        self.started = 0.0
-        self.problem = ""
-
-    @staticmethod
-    def devices():
-        import sounddevice as sd
-        hosts = sd.query_hostapis()
-        return [{"id": f'{hosts[d["hostapi"]]["name"]}: {d["name"]}',
-                 "name": d["name"], "channels": d["max_input_channels"], "index": i}
-                for i, d in enumerate(sd.query_devices()) if d["max_input_channels"] > 0]
-
-    def start(self, config):
-        import numpy as np
-        import sounddevice as sd
-        if self.stream:
-            raise PlanError("The microphone is already recording.")
-        device = config.get("mic_device", "")
-        matches = [d for d in self.devices() if d["id"] == device]
-        if device and len(matches) != 1:
-            raise PlanError("The selected microphone is unavailable. Choose it again in Settings.")
-        index = matches[0]["index"] if device else None
-        info = sd.query_devices(index, "input")
-        channel = int(config.get("mic_channel", 1))
-        if not 1 <= channel <= info["max_input_channels"]:
-            raise PlanError("That microphone channel is unavailable.")
-        self.rate = int(info["default_samplerate"])
-        self.chunks, self.level, self.peak, self.problem = [], 0.0, 0.0, ""
-        self.started = time.monotonic()
-
-        def callback(data, frames, timing, status):
-            if status:
-                self.problem = "Audio capture dropped samples. Try again with a shorter command."
-            if time.monotonic() - self.started > 90:
-                self.problem = "Recording reached the 90-second limit. Try a shorter command."
-                raise sd.CallbackStop
-            mono = data[:, channel - 1].copy()
-            self.level = float(np.sqrt(np.mean(mono * mono)))
-            self.peak = max(self.peak, self.level)
-            self.chunks.append(mono)
-
-        stream = sd.InputStream(device=index, channels=channel, samplerate=self.rate,
-                                dtype="float32", callback=callback)
-        try:
-            stream.start()
-        except Exception:
-            stream.close()
-            raise
-        self.stream = stream
-
-    def stop(self, discard=False):
-        import numpy as np
-        if not self.stream:
-            raise PlanError("The microphone was not recording.")
-        self.stream.stop()
-        self.stream.close()
-        self.stream = None
-        chunks, self.chunks = self.chunks, []
-        self.level = 0.0
-        if discard:
-            return b""
-        if self.problem:
-            raise PlanError(self.problem)
-        if not chunks or self.peak < 0.003:
-            raise PlanError("The microphone was silent. Check the device and input channel.")
-        samples = (np.clip(np.concatenate(chunks), -1, 1) * 32767).astype("<i2")
-        if len(samples) < self.rate * 0.25:
-            raise PlanError("That recording was too short. Try again.")
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as output:
-            output.setnchannels(1)
-            output.setsampwidth(2)
-            output.setframerate(self.rate)
-            output.writeframes(samples.tobytes())
-        return buf.getvalue()
 
 
 class Worker:
@@ -132,6 +51,84 @@ class Worker:
         self.active_id = None
         self.visual_preparation = None
         self.parameter_preparation = None
+        self.wake = None
+        self.wake_error = ""
+        self.wake_lock = threading.RLock()
+        self.wake_log = ActivationLog(directory.parent)
+        self.voice_activation = ""
+        self.speaker = VoiceOutput()
+        self.last_speech_id = None
+
+    def poll_speech(self):
+        """Consume one fresh panel speech event; never queue it for later."""
+        try:
+            state_path = self.directory / 'speech-state.json'
+            state = json.loads(state_path.read_text())
+            available = (state.get('session') == self.directory.name and state.get('ready') is True
+                         and 0 <= time.time() - state_path.stat().st_mtime < 3
+                         and not state.get('recording') and not state.get('transport_recording')
+                         and not state.get('busy') and not self.busy and not self.recorder.stream)
+        except (OSError, ValueError, AttributeError):
+            state, available = {}, False
+        if not available and self.speaker.active:
+            self.speaker.stop()
+        path = self.directory / 'speech-command.json'
+        try:
+            command = json.loads(path.read_text())
+        except (OSError, ValueError):
+            path.unlink(missing_ok=True)
+            return
+        path.unlink(missing_ok=True)
+        if not isinstance(command, dict):
+            return
+        created, identifier = command.get('created'), command.get('id')
+        if (command.get('session') != self.directory.name or not isinstance(identifier, str)
+                or not identifier.isalnum() or len(identifier) > 64 or identifier == self.last_speech_id
+                or type(created) not in (int, float) or not 0 <= time.time() - created < 5):
+            return
+        self.last_speech_id = identifier
+        if command.get('kind') == 'stop':
+            self.speaker.stop()
+            return
+        if not available:
+            return
+        config = dict(self.config)
+        if command.get('kind') == 'preview':
+            options = command.get('options')
+            if not isinstance(options, dict):
+                return
+            config.update({key: options[key] for key in VOICE_FIELDS if key in options})
+            text = 'Which track would you like me to use?'
+        elif command.get('kind') == 'reply' and config.get('speech_enabled') and state.get('enabled'):
+            text = command.get('text')
+            if not isinstance(text, str) or len(text) > 12000:
+                return
+        else:
+            return
+        try:
+            self.speaker.speak(text, config)
+        except PlanError as exc:
+            self.speaker.error = str(exc)
+
+    def configure_wake(self):
+        with self.wake_lock:
+            if self.wake:
+                self.wake.close()
+                self.wake = None
+            self.wake_error = ""
+            if self.config.get("wake_enabled"):
+                try:
+                    self.wake = WakeListener(self.directory, self.recorder, self.wake_log, self.config, atomic_json)
+                except PlanError as exc:
+                    self.wake_error = str(exc)
+
+    def wake_info(self):
+        with self.wake_lock:
+            return self.wake.info() if self.wake else {"status": self.wake_error or "Wake word off", "error": self.wake_error}
+
+    def log_voice(self, activation, event, **fields):
+        if activation and self.config.get("wake_enabled") and self.config.get("wake_log_enabled"):
+            self.wake_log.add(activation, event, **fields)
 
     def get_desktop(self):
         if self.desktop is None:
@@ -199,9 +196,15 @@ class Worker:
         except Exception as exc:
             devices = []
             error = "Microphone discovery unavailable: " + type(exc).__name__
+        outputs, voices, voice_error = [], [], ''
+        try:
+            outputs, voices = self.speaker.devices(), self.speaker.voices()
+        except Exception:
+            voice_error = 'Voice/output discovery unavailable. Refresh audio devices to try again.'
         return {"kind": "settings", "config": self.config, "devices": devices, "presets": PRESETS,
+                "outputs": outputs, "voices": voices, "voice_error": voice_error,
                 "keys": {p: bool(providers.api_key(p)) for p in KEY_PROVIDERS},
-                "audio_error": error, "remote": self.remote.info(),
+                "audio_error": error, "remote": self.remote.info(), "wake": self.wake_info(),
                 "vision": self.visual_status() if self.config.get("vision_enabled") else {}}
 
     def save_settings(self, job):
@@ -214,6 +217,8 @@ class Worker:
         if not isinstance(config["aliases"], str) or len(config["aliases"]) > 8000:
             raise PlanError("Preferences must be under 8,000 characters.")
         correction_pairs(config["speech_corrections"])
+        phrases(config)
+        validate_voice(config)
         if any(type(config[k]) is not bool for k in ("use_jev", "allow_lua", "remote_enabled", "vision_enabled", "ui_memory_enabled")):
             raise PlanError("Invalid settings.")
         if type(config["remote_port"]) is not int or not 1024 <= config["remote_port"] <= 65535:
@@ -224,14 +229,16 @@ class Worker:
                 import keyring
                 keyring.set_password("HeyComputer", provider, value)
         atomic_json(self.config_path, config)
+        self.speaker.stop()
         self.config = config
         if not config["vision_enabled"] and self.desktop:
             self.desktop.allowed_hosts.clear()
             self.desktop.clear()
         self.remote.configure(config["remote_enabled"], config["remote_port"])
+        self.configure_wake()
         return self.settings()
 
-    def complete(self, job_id, fn, native_completed=False):
+    def complete(self, job_id, fn, native_completed=False, activation=""):
         try:
             result = fn()
         except PlanError as exc:
@@ -242,6 +249,8 @@ class Worker:
             result["message"] = "Native setup completed. " + result.get("message", "").replace("No project changes were made.", "")
             result["visual"] = True
         result["id"] = job_id
+        if activation and result.get("kind") == "error":
+            self.log_voice(activation, "error", reason=result.get("message", "Request failed."))
         with self.output_lock:
             self.busy = False
             if not self.shutdown:
@@ -254,6 +263,7 @@ class Worker:
         kind = job.get("kind")
         if kind == "shutdown":
             self.cancel_visual.set()
+            self.speaker.stop()
             self.shutdown = True
             return
         if self.busy:
@@ -261,11 +271,13 @@ class Worker:
                         {"kind": "error", "message": "A request is already running.", "id": job_id})
             return
         self.busy = True
+        self.speaker.stop()
         self.active_id = job_id
         self.cancel_visual.clear()
         config = dict(self.config)
         preparation = self.visual_preparation
         parameter_preparation = self.parameter_preparation
+        activation = self.voice_activation if kind == "record_stop" else ""
         self.visual_preparation = None
         self.parameter_preparation = None
 
@@ -313,8 +325,14 @@ class Worker:
                 return result
             if kind == "settings":
                 return self.settings()
+            if kind == "audio_devices":
+                return dict(self.settings(), kind="audio_devices")
             if kind == "save_settings":
                 return self.save_settings(job)
+            if kind in ("wake_log", "wake_log_clear"):
+                if kind == "wake_log_clear":
+                    self.wake_log.clear()
+                return {"kind": "wake_log", "entries": self.wake_log.read()}
             if kind in ("visual_permissions", "visual_hosts", "visual_approve"):
                 if config.get("vision_enabled") is not True:
                     raise PlanError("Enable visual control and save settings first.")
@@ -330,22 +348,36 @@ class Worker:
                 return self.settings()
             if kind == "record_start":
                 self.recorder.start(config)
-                return {"kind": "recording"}
+                self.voice_activation = job.get("wake_event") or self.recorder.record_id
+                self.log_voice(self.voice_activation, "recording_started",
+                               source="wake word" if job.get("wake_event") else "Talk button / action / remote")
+                return {"kind": "recording", "record_id": self.recorder.record_id}
             if kind == "record_cancel":
                 self.recorder.stop(discard=True)
+                self.log_voice(self.voice_activation, "cancelled", reason=job.get("reason", "Cancelled; audio discarded."))
+                self.voice_activation = ""
                 return {"kind": "cancelled"}
             if kind in ("plan", "record_stop"):
                 snapshot, history = job.get("snapshot", {}), job.get("history", [])
                 text = job.get("text", "").strip()
                 if kind == "record_stop":
+                    spoken_stop = (job.get("stop_phrase") == config["wake_stop_phrase"]
+                                   and job.get("record_id") == self.recorder.record_id)
                     wav = self.recorder.stop()
+                    self.log_voice(activation, "submitted", source="stop phrase" if spoken_stop else "Stop & send")
                     vocabulary = [i["name"] for i in snapshot.get("inputs", [])]
                     vocabulary += re_words(config.get("aliases", ""))
                     vocabulary += [p["name"] for p in snapshot.get("plugins", [])
                                    if any(term in p["name"].lower() for term in ("genome", "fabfilter"))]
                     text = providers.transcribe(wav, config, vocabulary)
+                    if spoken_stop:
+                        text = strip_stop_phrase(text, config["wake_stop_phrase"])
+                    self.log_voice(activation, "transcribed", transcript=text)
                     raw_text = text
                     text = correct_text(text, config)
+                    if not text.strip():
+                        self.log_voice(activation, "no_command", reason="No command was heard before stopping.")
+                        return {"kind": "reply", "message": "No command was heard before stopping."}
                     # Transcript appears immediately while command interpretation runs.
                     atomic_json(self.directory / "transcript.json", {"id": job_id, "text": text})
                 else:
@@ -359,7 +391,7 @@ class Worker:
                 return result
             raise PlanError("Unknown helper request.")
 
-        threading.Thread(target=self.complete, args=(job_id, perform, (kind == "visual_continue" or kind == "parameter_continue" and job.get("native_setup") is True)), daemon=True).start()
+        threading.Thread(target=self.complete, args=(job_id, perform, (kind == "visual_continue" or kind == "parameter_continue" and job.get("native_setup") is True), activation), daemon=True).start()
 
     def run(self):
         # This must precede the background request threads. It initializes a
@@ -370,13 +402,16 @@ class Worker:
         except ImportError:
             pass  # Native/audio commands still work before optional libs exist.
         self.remote.configure(self.config.get("remote_enabled") is True, self.config.get("remote_port", 8765))
+        self.configure_wake()
         atomic_json(self.directory / "ready.json", {"pid": os.getpid(), "version": "0.1.0"})
+        timed_out = False
         try:
             while not self.shutdown:
                 self.poll_visual_cancel()
                 heartbeat = self.directory / "heartbeat"
                 last_seen = heartbeat.stat().st_mtime if heartbeat.exists() else self.started
                 if time.time() - last_seen > 20:
+                    timed_out = True
                     break
                 for path in sorted(self.directory.glob("*.request.json")):
                     try:
@@ -385,28 +420,45 @@ class Worker:
                         self.dispatch(job)
                     except (ValueError, KeyError, OSError):
                         path.unlink(missing_ok=True)
+                self.poll_speech()
+                with self.wake_lock:
+                    if self.wake:
+                        self.wake.poll(self.busy or self.speaker.suppress_wake)
                 atomic_json(self.directory / "meter.json", {
                     "level": self.recorder.level, "recording": bool(self.recorder.stream),
-                    "problem": self.recorder.problem})
+                    "problem": self.recorder.problem, "wake": self.wake_info(), "voice": self.speaker.info()})
                 time.sleep(0.10)
         finally:
             self.cancel_visual.set()
             self.shutdown = True
+            self.speaker.stop()
             self.remote.stop()
+            with self.wake_lock:
+                if self.wake:
+                    self.wake.close()
             if self.recorder.stream:
-                self.recorder.stop(discard=True)
+                self.log_voice(self.voice_activation, "cancelled", reason="Panel closed; audio discarded.")
+            self.recorder.close()
             with self.output_lock:
                 for pattern in ("*.request.json", "*.response.json", "*.tmp",
                                 "ready.json", "meter.json", "transcript.json", "heartbeat",
                                 "remote-state.json", "remote-command.json", "visual-guard.json",
                                 "visual-cancel.json", "visual-progress.json", "test-state.json",
-                                "test-command.json", "test-rejected.json", "test-command.lock"):
+                                "test-command.json", "test-rejected.json", "test-command.lock",
+                                "wake-state.json", "wake-event.json", "speech-state.json", "speech-command.json"):
                     for path in self.directory.glob(pattern):
                         path.unlink(missing_ok=True)
-                try:
-                    self.directory.rmdir()
-                except OSError:
-                    pass
+                if timed_out:
+                    # REAPER dialogs and native actions can pause deferred Lua
+                    # frames while the panel is still open. Leave its directory
+                    # intact so a resumed frame cannot crash on a status write.
+                    # Remove requests above; never replay them after reconnect.
+                    atomic_json(self.directory / "worker-stopped.json", {"reason": "heartbeat_timeout"})
+                else:
+                    try:
+                        self.directory.rmdir()
+                    except OSError:
+                        pass
 
 
 def re_words(value):

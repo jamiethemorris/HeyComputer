@@ -5,11 +5,11 @@ from .protocol import PlanError
 OPS = {'delete_fx', 'bypass_fx', 'offline_fx', 'move_fx', 'copy_fx'}
 
 
-def validate_chain(actions, snapshot):
+def validate_chain(actions, snapshot, refs=None):
     chains = {t['guid']: {f['guid']: dict(f) for f in t.get('fx_instances', [])}
               for t in snapshot.get('tracks', [])}
     existing_tracks = set(chains)
-    for a in actions:
+    for index, a in enumerate(actions, 1):
         op = a['op']
         if op == 'create_tracks':
             chains['first_created'] = {}
@@ -37,6 +37,13 @@ def validate_chain(actions, snapshot):
                 del chain[v['fx']]
             else:
                 destination = v.get('destination', a['target'])
+                if refs and isinstance(destination, str):
+                    targets = refs.resolve(destination, index)
+                    if len(targets) != 1:
+                        raise PlanError('A plugin transfer needs one destination track.')
+                    destination = targets[0]['guid']
+                    if targets[0].get('planned'):
+                        chains.setdefault(destination, {})
                 if not isinstance(destination, str) or destination not in chains:
                     raise PlanError('Create or identify the destination track first.')
                 if destination == a['target'] and op == 'copy_fx':
@@ -73,6 +80,6 @@ def validate_chain(actions, snapshot):
 HELP = """
 Plugin chain management is NATIVE and needs no visual mode or parameter inspection. fx_instances lists each normal track FX's GUID, 1-based slot, enabled and offline state in signal-chain order. For delete_fx, bypass_fx, offline_fx, move_fx and copy_fx, target MUST be an exact existing track GUID and value a JSON string. Multiple tracks/plugins use separate actions, bounded by the normal plan limit. Never match duplicate plugin names by guessing; use the user's slot/order or ask which instance.
 delete_fx value={"fx":"exact FX GUID"} removes that INSTANCE from the project, never uninstalls or deletes plugin files. bypass_fx value={"fx":"GUID","on":true} bypasses, on=false re-enables processing. offline_fx value={"fx":"GUID","on":true} unloads/offlines; on=false brings it online. Bypass and offline are distinct; do not substitute one for the other or change the other state. Only bring a plugin online when requested.
-copy_fx value={"fx":"source FX GUID","destination":"destination track GUID or first_created","position":"last","anchor":""} copies an instance WITH its settings and bypass/offline state to a DIFFERENT track, leaving the source intact. position supports first/last or before/after an exact destination FX anchor. For cross-track moves, use move_fx with the same additional destination field; leaving destination out reorders on the source track. Destination first_created is allowed after create_tracks in this plan. New copies get new GUIDs; do not invent them or target a copy later in the same plan. Likewise request fresh state before further work on a moved instance. Preserve full native plugin state by using these operations, never add_fx plus guessed parameter reconstruction. Existing FX automation travels with the plugin through the native transfer. Ask if the user explicitly wants different automation handling.
+copy_fx value={"fx":"source FX GUID","destination":"destination track GUID, first_created, or a single earlier result reference","position":"last","anchor":""} copies an instance WITH its settings and bypass/offline state to a DIFFERENT track, leaving the source intact. position supports first/last or before/after an exact destination FX anchor. For cross-track moves, use move_fx with the same additional destination field; leaving destination out reorders on the source track. Destination first_created is allowed after create_tracks; result:N:K or a single-track result:N also target a track or folder produced earlier in this plan. New copies get new GUIDs; do not invent them or target a copy later in the same plan. Likewise request fresh state before further work on a moved instance. Preserve full native plugin state by using these operations, never add_fx plus guessed parameter reconstruction. Existing FX automation travels with the plugin through the native transfer. Ask if the user explicitly wants different automation handling.
 move_fx value={"fx":"GUID","position":"before","anchor":"other FX GUID"}; position is before/after with a different anchor in the SAME track chain, or first/last with anchor="". Reorder native instances, never delete/reinsert/recreate them or click/drag them. Preserve their settings, state and unrelated FX order. Input/master/take FX and containers are unsupported. To put an existing plugin in slot N, use its neighboring instance as the anchor, accounting for earlier actions. Do not reference a plugin after deleting it. A parameter edit plus an offline/online change to that same plugin requires separate requests so parameters can be re-inspected. Pure chain edits may operate on many exact plugin instances; the one-instance limit only concerns parameter inspection. For new chains use add_fx in the desired order; these chain-management operations require existing GUIDs.
 """

@@ -33,7 +33,8 @@ class AutomationTests(unittest.TestCase):
         for op,v in [('automation_state',{'envelope':{'kind':'pan'},'visible':False}),
                      ('automation_clear',{'envelope':{'kind':'mute'},'start':{'bar':2},'end':{'bar':4}})]:
             self.validate(action(op,'t',json.dumps(v)))
-        with self.assertRaises(PlanError):self.validate(action('automation_mode','all','write'))
+        self.validate(action('automation_mode','all','write'))
+        with self.assertRaises(PlanError):self.validate(action('automation_mode','missing','write'))
     def test_invalid_values_shapes_and_fields(self):
         for kind,value,shape in [('volume','13 dB','linear'),('volume','NaN dB','linear'),('pan','101','linear'),
                                  ('pan','nan','linear'),('mute','on','linear'),('mute','yes','square')]:
@@ -47,10 +48,13 @@ class AutomationTests(unittest.TestCase):
         self.snapshot['fx_parameters'][0]['parameters'][0]['automatable']=False
         with self.assertRaises(PlanError):self.validate(self.op(envelope={'kind':'fx','fx':'f','index':0,'name':'Frequency'}))
     def test_chain_edits_cannot_invalidate_envelope_identity(self):
-        with self.assertRaises(PlanError):self.validate(self.op(),action('delete_fx','t',json.dumps({'fx':'f'})))
+        fx=self.op(envelope={'kind':'fx','fx':'f','index':0,'name':'Frequency'},
+                   points=[{'at':{'seconds':2},'value':'300 Hz','shape':'linear'}])
+        with self.assertRaises(PlanError):self.validate(fx,action('delete_fx','t',json.dumps({'fx':'f'})))
+        # Track volume envelopes retain their identity when the FX chain changes.
+        self.validate(self.op(),action('delete_fx','t',json.dumps({'fx':'f'})))
         self.snapshot['tracks'].append({'guid':'d','fx_instances':[]})
         dest=self.op();dest['target']='d'
-        with self.assertRaises(PlanError):
-            self.validate(dest,action('copy_fx','t',json.dumps({'fx':'f','destination':'d','position':'last','anchor':''})))
+        self.validate(dest,action('copy_fx','t',json.dumps({'fx':'f','destination':'d','position':'last','anchor':''})))
 
 if __name__=='__main__':unittest.main()

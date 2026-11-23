@@ -11,17 +11,19 @@ work and has its own license. HeyComputer is not affiliated with or endorsed by 
 ## What it can do
 
 - Create and organize tracks, add plugins, set inputs, pan, and record-arm tracks.
+- Hide/show tracks in the track panel (TCP), mixer (MCP), or both.
 - Control transport, jump by bars, loop or skip ranges, edit items and markers,
   manage sends, and save project versions.
 - Edit exposed plugin parameters directly; bypass, offline, reorder, copy, or
   move plugins while preserving their settings.
-- Write track and plugin automation points, ramps, fades, and repeating patterns.
+- Write track, send-volume and plugin automation points, ramps, fades, and repeating patterns.
+- Create MIDI items and patterns; edit, transpose, quantize, or delete MIDI notes.
 - Launch installed REAPER actions and scripts by name.
 - Optionally use REAPER-window vision for controls that need the interface, or
   control the Mac microphone from the experimental iPhone/Apple Watch remote.
 
-The panel adapts to a side or bottom docker and follows REAPER's theme. It uses
-push-to-talk or typed commands; it does not listen for a “Hey Computer” wake word.
+The panel adapts to a side or bottom docker and follows REAPER's theme. It supports
+typed commands, push-to-talk, and optional local “Hey computer” wake-word detection.
 This is a macOS-focused prototype, with the current limitations documented below.
 
 ## First setup (macOS)
@@ -45,7 +47,7 @@ sh scripts/setup.sh
 2. In REAPER, open **Actions → Show action list → New action → Load ReaScript**.
    Select `reaper/HeyComputer.lua`, then run it.
 3. In **Settings**, choose **Use OpenRouter for all**, enter your **OpenRouter key**
-   once, and click **Save settings**. That key covers Jev, conversational fallback,
+   once, and click **Save all settings**. That key covers Jev, conversational fallback,
    and transcription. Keys are stored in macOS Keychain under the service `HeyComputer`.
    `OPENROUTER_API_KEY` overrides the saved key when inherited by REAPER. API use
    is billed separately from chat subscriptions.
@@ -131,8 +133,9 @@ the clarification. Input aliases can also be written in preferences, e.g.
 
 - Type a command and click **Send** (or Command+Enter).
 - Click **Talk**, speak, then **Stop & send**. **Cancel recording** discards audio.
-  The first version uses click-to-record, not continuous listening. Recordings
-  are limited to 90 seconds and audio stays in memory until transcription.
+  With local wake words enabled, say the wake phrase to start and the stop phrase
+  to submit. Recordings are limited to 90 seconds and audio stays in memory until
+  transcription.
 - Use **Dock** to choose a REAPER docker or return to a floating window. REAPER
   controls each docker’s position; its tab can be moved to a side or bottom dock.
   The panel remembers the docker and reflows to available width.
@@ -143,6 +146,89 @@ the clarification. Input aliases can also be written in preferences, e.g.
   Otherwise use REAPER’s normal undo history.
 - Conversation history is available under **Conversation** and kept in memory.
   Use **Clear conversation** for a fresh context.
+
+### Spoken replies (optional, macOS)
+
+In **Settings → Spoken replies**, enable **Speak questions, replies and problems**
+to hear clarification questions, conversation replies and errors. Successful
+command receipts stay silent. Speech uses installed macOS voices locally: no
+speech API key, endpoint, model download or per-use fee is needed. Your existing
+command model and transcription service still use their normal connections.
+
+Choose a voice, audio output device, and mono channel or stereo output pair. The
+separate **Voice volume** starts at **20%** and ranges from mute to 100%; it does
+not change REAPER's mix or macOS volume. **Test voice** previews unsaved output
+choices, and **Stop voice** interrupts playback. **Save all settings**, at the
+bottom of Settings, applies all sections; refreshing audio devices preserves
+unsaved choices. Speech starts disabled on existing and new installations.
+
+Wake detection pauses during synthesis/playback and briefly afterward to avoid
+hearing the assistant itself. Starting Talk or another command stops speech.
+While REAPER is recording, replies remain text-only and are not queued for later.
+Unavailable outputs produce a visible error rather than falling back to a
+different device. Only speech playback opens the output stream; no background
+speech model runs while idle. Synthesis uses private temporary audio files that
+are removed on completion, cancellation or error. Long replies are shortened for
+speech; the full response remains in the conversation.
+
+### Local wake and stop words (optional)
+
+Run once from the repository root:
+
+```sh
+sh scripts/setup_wake.sh
+```
+
+This installs the optional `sherpa-onnx` and `sentencepiece` dependencies and
+downloads a checksum-verified English keyword model from the upstream project.
+Only about 5.5 MB of model files are retained under REAPER's
+`Data/HeyComputer/models/kws-en`; model files are not part of this repository.
+For a portable/nonstandard resource folder, pass `--runtime /path/to/Data/HeyComputer`.
+Reopen the panel after installation.
+
+In **Settings → Local wake & stop words**, enable **Listen for a wake word** and
+save. The defaults are **hey computer** to start Talk and **execute** to stop and
+send. Both phrases are editable (English, up to six words); use a stop phrase you
+will not normally say inside a command, such as “send it.” Wait for **Listening…**
+after waking, then speak your command. The stop phrase also works for recordings
+started with Talk, a shortcut, or the remote. A detected stop phrase is removed
+from the end of the transcript before command interpretation. The buttons still
+work normally.
+
+Keyword detection runs locally on one CPU inference thread, using the microphone
+device and channel selected above. The same input stream is reused for Talk.
+Idle audio is held only in a bounded processing queue, then discarded; it is
+neither saved, transcribed, nor uploaded. The listener does not make model-service
+requests or require another account. Initial dependency/model installation needs
+internet access; subsequent wake/stop detection does not. Submitted command audio
+still goes to your configured transcription provider, just like **Stop & send**.
+
+Listening continues when the panel's dock tab is hidden, and ends when the panel
+closes. **Pause wake word** releases the idle microphone; **Resume wake word**
+enables it again. Settings, unsent drafts, pending requests and script review block
+wake activation. Stop detections are tied to the current Talk recording, never a
+future one. A failed capture or 90-second recording timeout discards the audio
+without submitting it. No automatic silence-based submission is enabled.
+
+**Keep a local activation log** records detected phrases, recording starts,
+submissions, command transcripts, cancellations, errors and ignored/expired
+activations. It writes only on events, outside the audio callback. Use
+**View / refresh activation log** and expand **Recent activations**, or inspect
+`Data/HeyComputer/wake-activations.jsonl`. One previous file is retained after
+rotation at about 1 MB (roughly 2 MB total). Files are private to your user account;
+**Clear log** deletes both. The log is excluded from Git and model requests.
+It contains no audio. A cancelled or timed-out activation has no transcript:
+the detected phrase records what the keyword detector matched, not an independent
+transcription of the background sound. Logging does not transcribe ambient speech.
+
+Music and background speech can cause false activations. Lower sensitivity if
+necessary, or pause listening. A false wake alone cannot send a command; submission
+requires a stop phrase or **Stop & send**, which can itself be falsely detected.
+Recognition with your voice, mic and room needs testing; the automated fixtures
+do not establish accuracy in a studio.
+
+The detector uses [sherpa-onnx keyword spotting](https://k2-fsa.github.io/sherpa/onnx/kws/index.html)
+and its [English GigaSpeech keyword model](https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html).
 
 ### Keyboard shortcuts and toolbar actions
 
@@ -165,9 +251,58 @@ panel, expires after 15 seconds and is discarded on startup failure or closing.
 Repeated presses during startup do not open duplicate panels. Send is disabled
 during recording; Talk stops and sends that recording instead.
 
+The Talk toolbar button follows the confirmed microphone recording state,
+including recordings started by the wake phrase, panel or remote. Existing
+ReaJev Talk buttons are discovered when the panel opens, so they also light up
+without being clicked first. Stopping, cancelling or closing the panel clears
+the indicator.
+
 If automatic registration fails, use **New action → Load ReaScript** and select
 the two `HeyComputer - …` files alongside `reaper/HeyComputer.lua`. No shortcuts are assigned
 or overwritten automatically.
+
+### Combined track workflows
+
+Track duplication and folder grouping are direct native operations. For example:
+
+> Duplicate guitar track 12 twice, pan the copies hard left and right, put the
+> original and both copies into a Guitars folder, and add Pro-Q to that folder.
+
+The whole plan runs as one undoable command. Duplication uses REAPER's native
+track duplication, retaining media items, FX settings and bypass/offline state,
+envelopes and routing. A folder source includes its complete child branch once.
+New folder parents start without default FX; only the requested inserts are added.
+Existing nonadjacent sibling tracks can be gathered into a folder at the first
+member's position, preserving their project order and any nested folders. Tracks
+at different folder levels need a more specific restructuring operation first.
+
+Plans can refer to tracks produced by earlier steps, including individual copies,
+new folders and separate batches. This also supports commands such as creating two
+tracks and a bus, sending the tracks to the bus, copying an existing plugin to it,
+then coloring or automating the new tracks. Built-in volume/pan/mute automation
+can be combined with plugin chain edits; FX parameter automation still requires
+inspection and a stable FX chain.
+
+Internally, `result:N` refers to every track produced by earlier action N, and
+`result:N:K` selects its Kth track. Track numbers are resolved from the original
+snapshot; later steps use these references rather than guessing new numbers or
+GUIDs. Existing `created` / `first_created` selectors refer to the most recent
+creation batch, while `selected` / `all` remain tied to the original snapshot.
+References are supported in native track edits, sends, built-in automation,
+plugin-transfer destinations and plugin opening/inspection after insertion.
+
+The executor validates the complete plan, folder topology and routing before
+editing. A plan may add at most 64 tracks total, including copied descendants and
+new folder parents, and contain at most 64 operations. Failures roll back created
+tracks, original track order, state and selection. Raw action/script launches
+still run separately: their arbitrary effects do not provide typed results for
+later steps. This improves composition of supported operations; it does not give
+the model unrestricted access to every REAPER feature.
+
+`scripts/test_track_layout_live.lua` verifies duplication, nested/nonadjacent
+folders, Pro-Q state, media, envelopes, routing, result references and undo on
+temporary tracks in the dedicated `Jev Testing` project, then removes those tracks.
+It makes no model requests and does not save the project.
 
 ### REAPER-only visual control (experimental, macOS 14+)
 
@@ -383,7 +518,11 @@ so; saving a file and recording audio cannot be rolled back as ordinary edits.
 | Skip playback | “Skip bars 9 through 12 during playback” sets a time selection, disables repeat, and invokes REAPER's native **Transport: Play (skip time selection)**. It starts playback without deleting audio. “Skip the cycle area” uses the existing loop bounds. Stop ends playback; ordinary Play resumes normal playback. |
 | Markers and regions | “Add a red marker called Verse at bar 9”, “Make bars 17 through 24 a blue region called Chorus”, “Rename that region Outro and make it orange”. Ambiguous names get a question. |
 | Items | “Name the selected items Kick”, “Color those items green”, “Reduce the selected items by 6 dB”. Names apply to active takes (or notes on empty items), and gain applies to items, not track faders. Coloring clears take-color overrides so the item color can show according to REAPER's theme preferences. |
+| Item targeting and selection | “Lower all items on Kick by 6 dB”, “Color the vocal items in the chorus blue”, “Select all items on Kick”. Native track/range targeting requires no manual selection and preserves selection unless asked to change it. |
+| Repeat audio samples | “Keep the kicks going every half note to the end of the vocal track below.” Copies an existing audio item natively using the tempo map; no timeline zoom, menus or visual control. |
 | Track colors | “Make the guitar tracks blue”. Existing naming, pan, volume, mute, solo, input, FX and arming remain available. |
+| Track visibility | “Hide selected tracks”, “Show all tracks”, “Hide the guitar tracks in the mixer”, “Show the bass track in TCP”. Without a panel, both TCP and MCP change. Naming one panel preserves the other. Hidden tracks remain in context and can be addressed by name. No muting, selection changes or SWS dependency. |
+| MIDI items and notes | Create MIDI items on existing or newly created tracks, insert notes/chords/repeating patterns, transpose, set pitch/velocity/length/channel/mute, shift or quantize note starts, and delete matching notes. All use native edits, including combined create-and-fill commands. |
 | Sends / buses | “Send the selected tracks to Reverb at −12 dB”, “Make that send pre-fader”, “Mute the send from Guitar to Reverb”, “Remove that send”, “Create a Reverb bus and send the selected tracks to it”. |
 | Save | “Save”, “Save a new version”. Versions use the next unused `song_v001.rpp`, `song_v002.rpp`, etc. in the project folder, and switch to the new file. Media files are shared; this is project versioning, not a media backup. An unsaved project opens native Save As for you to finish. |
 | Native actions | Common built-in Main-section item, track, selection and view actions: split, duplicate, trim, normalize, remove, lock/group, zoom, snapping, grid, metronome, ripple editing and crossfades where available in the installed action list. |
@@ -395,11 +534,18 @@ the beat to keep it, or specify seconds for a time offset. During playback, a
 relative jump uses the current play position; while stopped, it uses the edit
 cursor. Absolute bar numbers honor the project's displayed numbering offset.
 
-Exact short commands such as “Play”, “Stop”, “Record”, “Save” and numeric bar jumps
+Exact short commands such as “Play”, “Stop”, “Record”, “Save”, numeric bar jumps,
+and “Hide selected tracks” / “Show all tracks” (including TCP/MCP variants)
 use a local parser and need no model request or API key when typed. Voice still
 needs transcription. Other commands use the configured model; simple track setup
 retains the Jev recipe. Busy requests are not interrupted by another assistant
 command; REAPER's normal transport controls remain available.
+
+“Hide this track” also runs locally when exactly one track is selected; “hide
+these tracks” uses the selected tracks. Normal requests do not require preference
+entries or SWS action names. Other wording uses the model and current project
+context. If a singular target is unclear, it uses an unambiguous conversational
+reference or asks which track; it never assumes a hovered track.
 
 Native-action candidates come from the **installed action list**, filtered for
 supported local operations and searched by the request. Models cannot invent
@@ -407,6 +553,144 @@ command IDs. These commands run one action per request, using the current
 captured selection. The result says which action was invoked; use REAPER's normal
 Undo for its edits. Compound native-action macros aren't supported yet. Structured
 operations can be combined, e.g. create tracks, arm the first, then record.
+
+The named-action launcher can access every installed action in the **Main**
+section, including SWS, registered scripts and custom actions. For example,
+“Run SWS: Hide selected track(s)” and “Run SWS: Show all tracks” still invoke those
+exact installed actions. Actions in separate MIDI Editor/Media Explorer sections
+are not part of this launcher. Main actions are searched locally: model requests
+receive up to 64 relevant candidates from each catalog, and exact named launches
+can bypass the model. A large installed action list therefore does not all become
+prompt text. Arbitrary actions remain standalone: their selection/focus needs,
+dialogs, external effects and script completion are not generally verifiable.
+
+Ordinary hide/show requests use the native `track_visibility` operation and can
+be combined with naming, coloring, track creation, etc. Its value contains `tcp`
+and/or `mcp` booleans, with omitted panels preserved. `selected`, `all`, exact
+track GUIDs and earlier track-result references work. Visibility settings are
+reported in the snapshot and verified after writes; failure rolls back the batch.
+Folder collapse, global mixer filters and master-track display are separate and
+are not changed. `scripts/test_visibility_live.lua` checks the flags, Undo and
+rollback on temporary tracks in **Jev Testing**, then removes those tracks.
+
+## Item targeting and selection
+
+Item gain, naming and color edits can address all items on one or more named
+tracks directly, including hidden tracks and items omitted from the model's
+bounded preview. Optional filters restrict the set to audio or MIDI and a time
+range. No visual control, clipboard or selection preparation is needed.
+
+- “Lower all the Kick samples by 6 dB” adjusts item gain relatively, preserving
+  track faders, selection and other tracks' items.
+- “Set the Kick items to −6 dB” sets their absolute item gain.
+- “Color the vocal items in the chorus blue” uses items overlapping the known
+  region; “starting in the chorus” instead matches item starts.
+- “Select all items on Kick”, “Add the snare items to the selection”, “Deselect
+  the vocal items”, and “Clear item selection” explicitly change item selection.
+
+Range filters affect whole matching items, including the whole item's gain;
+they do not split items at range boundaries. Endpoints are start-inclusive and
+end-exclusive. Folder children must be included explicitly; a folder name does
+not silently include every descendant. Ambiguous track names or ranges can still
+need a question. Track selection remains unchanged.
+
+Track/range selectors are evaluated at each native step. Repeating the kicks and
+then reducing all Kick items' gain therefore includes the new copies in the same
+transaction and Undo. Explicit selection is the final step when combined with
+edits. Existing `selected`/`all` item selectors still refer to the captured set;
+new MIDI items can use `item_result:N`. Filtered selectors target existing track
+GUIDs and currently apply to item properties and selection, not MIDI note edits
+or arbitrary native actions. Limits are 64 tracks and 10,000 matched items per
+filtered operation, with at most 10,000 selection changes. Malformed targets are
+rejected before editing; execution failures restore saved track state.
+
+Live checks in REAPER 7.78 verify direct grouped gain with unchanged faders and
+selection, explicit selection and its Undo, range boundaries, and repeat-then-gain
+including newly created copies in one Undo. The local
+`scripts/test_item_repeat_live.lua` test restores prior track/item selections and
+removes its temporary tracks and generated audio.
+
+## Repeating audio samples
+
+The conversation model identifies the template item, interval and endpoint;
+REAPER performs the copies directly in one undoable operation. “Extend the kicks
+every half note to the end of the vocal track” continues after the last existing
+item onset on the kick track. Existing items remain intact. A specific start/end
+range can fill missing hits instead, skipping existing onsets. The template's
+original onset anchors the grid, including any intentional offset. Half notes
+are two quarter notes, with each placement resolved against REAPER's tempo map.
+
+Endpoints can be an exact item, the last item on an exact track, or a musical/time
+position. Each track's item count and bounds cover all its items, even when the
+model's individual item preview is truncated. An empty folder's children are not
+implicitly included. If several possible templates or vocal tracks make the
+request ambiguous, HeyComputer should ask which one.
+
+Copies preserve the template's item/take settings and effects, receive fresh
+identities, and are unselected and ungrouped. Starts are before the endpoint;
+sample tails retain their original length rather than being cut off. This first
+version requires stopped transport and audio-only takes on ordinary tracks
+(no fixed lanes or free item positioning). Limits are 512 new items per operation,
+2,048 per command, and 64 MiB of copied item state. It does not infer or recreate
+complex alternating samples/accents from one template. Failed edits use the
+existing track-state rollback; success is one REAPER Undo.
+
+Live verified in REAPER 7.78: native half-note repetition to another track's
+endpoint, unique item/take/FX identities, preserved audio source and item/take/FX
+settings, one-step Undo, duplicate avoidance, musical item context and rollback
+after a simulated mid-copy failure. `scripts/test_item_repeat_live.lua` runs only
+in the stopped **Jev Testing** project, uses a generated silent WAV and temporary
+tracks, and removes its test tracks and WAV afterward. It makes no model calls.
+
+## MIDI items and notes
+
+MIDI commands use the conversation model and native REAPER operations. They do
+not require visual control or reviewed custom Lua. Examples:
+
+- “Create a MIDI item on the drum track from bar 1 to bar 5. Add MIDI note 36
+  every quarter note at velocity 100, with sixteenth-note lengths.”
+- “Create a new track called Bass, add a MIDI item from bar 5 to bar 9, and
+  fill it with eighth notes at MIDI pitch 40.”
+- “Transpose the selected notes up an octave and set their velocity to 90.”
+- “Quantize the selected notes to sixteenths at 50% strength.”
+- “Shorten all notes in this item to eighth notes.”
+- “Delete the notes at MIDI pitch 36 between bars 3 and 5.”
+
+New tracks and MIDI items can be reused later in the same command. Notes/chords
+and repeating patterns can be added, shifted, transposed, muted, deleted, or
+given a new pitch, velocity, length or channel. Quantizing adjusts note starts
+on a straight musical grid; duration stays unchanged unless requested. Native
+musical-time conversion follows the project's tempo map. “Through bar 4” ends
+at the start of bar 5. Adding notes preserves existing notes and other MIDI
+events; it does not implicitly replace the item contents or load an instrument.
+
+The snapshot includes active-take identity, note and selection counts, MIDI grid,
+custom note names, and a bounded preview of notes. Selected notes are prioritized.
+Whole-item or pitch/time/selection-filter edits still work when the preview is
+truncated; exact note indices must have appeared in the preview and may only be
+used on the first MIDI edit to that item in a command. Item selection and note
+selection are separate. `selected`/`all` MIDI targets ignore audio items.
+
+Plans validate before editing and share one undo block, with rollback on failure.
+Edits require stopped transport and preserve other MIDI events. Locked items,
+external MIDI files, shared/pooled sources, and items repeating a looped source
+are refused without changing their source/lock settings. Only the active take is
+edited. Pitch and velocity overflow or notes extending beyond the item cause a
+clear error, rather than silent clipping. This version does not edit CC, pitch
+bend, MPE, notation or sysex, or add swing/humanization.
+
+Limits: 32 seed notes per insertion operation, up to 512 repetitions, 4,096
+inserted notes per command, 8,192 notes per item, and 16,384 existing notes across
+edited items per command. The model sees at most 128 notes per item and 512 total.
+Internally, `midi_create` produces `item_result:N` for later note and item-property
+edits; `result:N` remains a track reference. Durations/repetition intervals use
+quarter-note units (`1` quarter, `0.5` eighth, `0.25` sixteenth), independent of the
+time signature's denominator. MIDI channels are 1–16 in plans.
+
+`scripts/test_midi_live.lua` runs native integration checks on temporary tracks
+in the dedicated **Jev Testing** project, then removes those tracks. It checks
+creation/patterns, coloring, one-step Undo, note selection, editing/deletion,
+preservation of CC/text, and rollback. It never saves the project or calls a model.
 
 ## Plugin chain commands
 
@@ -448,7 +732,7 @@ and do not need a parameter-inspection or visual-model round trip.
 
 ## Automation
 
-Native envelope commands cover normal-track volume, pan, mute, and inspected plugin
+Native envelope commands cover normal-track volume, pan, mute, send volume, and inspected plugin
 parameters that expose usable automation/value formatting. New tracks can receive
 volume, pan and mute automation in the same command that creates them; the complete
 operation shares one undo step and rolls back on failure. Plugin parameters still need
@@ -456,6 +740,7 @@ inspection of the actual inserted plugin. Examples:
 
 - “Create a track called guitar, ramp its volume from −20 dB at bar 1 to 0 dB at bar 2, and alternate hard left/right pan every quarter note to bar 4.”
 - “Fade Guitar from 0 dB at bar 5 to −6 dB at bar 9.”
+- “Automate Clap’s send to clapverb from −6 dB at bar 5 to −12 dB at bar 9.”
 - “Pan Bass from hard left at bar 2 to hard right at bar 4.”
 - “Automate this filter’s cutoff from 300 Hz at bar 5 to 2 kHz at bar 9.”
 - “Clear Guitar’s volume automation from bars 5 through 9.”
@@ -475,9 +760,20 @@ must be cleared before changing a track mode. Mode changes follow REAPER’s nat
 envelope auto-arming/showing preferences. Mode/arming commands prepare manual
 recording but do not automatically move controls, start playback or record audio.
 
+Send-volume automation addresses one existing source-to-destination track route. It can
+draw points, clear a range, or change envelope visibility/arming using the same native
+operations as track automation. A fresh envelope holds the current send level until the
+first requested point; it does not change the dry-track fader, return fader, static send
+trim, or other sends. To lower only particular hits, specify the reduction and include
+return-to-baseline boundaries; ambiguous hit timing or an unspecified reduction requires
+clarification. The assistant does not detect transients inside recorded audio. Duplicate
+sends to the same destination are ambiguous; hardware-send automation is unsupported.
+Routing changes and track creation/duplication/folder changes must be separate requests
+from send automation so the route can be checked against fresh state.
+
 Plugin automation uses the same one-instance inspection/value-conversion path as direct
 parameters. Unsupported scales stop with an explanation. Automation items, pooled items,
-master/take/send envelopes, and freehand/audio-following automation are not supported.
+master/take envelopes, send pan/mute envelopes, and freehand/audio-following automation are not supported.
 Chain edits on affected tracks require a separate request from envelope edits. Changes
 use REAPER Undo and track-state rollback; snapshots include bounded envelope context.
 
@@ -486,6 +782,13 @@ FX-envelope transfer, volume/pan/mute points, range clearing, envelope state, mo
 ReaEQ automation, and VST3 Pro-Q 4 frequency automation (verified `2000.0 Hz`).
 `scripts/test_automation_live.lua` creates/removes only its own temporary tracks and
 refuses to run outside the stopped `Jev Testing.RPP` project.
+
+`scripts/test_send_automation_live.lua` instead creates a fresh muted test tab, never
+starts playback, saves only its owned fixture under `.runtime/`, closes it and restores
+the original project. REAPER 7.78 verification covers alternating-hit send dips and
+restoration, pre-first-point baseline preservation, unchanged faders/other sends,
+snapshot selectors, range clear/state edits, duplicate-route refusal and native rollback
+after an injected partial-write failure. Original project change counts are checked.
 
 ## Direct plugin parameters
 
@@ -541,8 +844,9 @@ These are limits of this build, not necessarily limits of REAPER or future work:
   Plugins must expose the control and usable value formatting; not every interface
   control does. The optional visual fallback can attempt remaining visible controls,
   subject to the window/focus limits above.
-- **Detailed MIDI / automation / comping:** no note drawing/editing, automation-item work,
-  master/take/send-envelope editing, take-lane comping or complex folder restructuring
+- **Advanced MIDI / automation / comping:** no CC/pitch-bend/MPE editing, shared/looped
+  MIDI source editing, swing/humanization, automation-item work,
+  master/take/send-envelope editing, take-lane comping or arbitrary moves across folder levels
   as structured operations yet. Those APIs are also absent from reviewed Lua.
 - **Advanced routing:** sends currently use stereo channels 1/2, with MIDI disabled
   on new sends. No hardware-output changes, sidechain/channel maps, MIDI sends,
@@ -600,9 +904,11 @@ completion of a deferred script or verification of its window.
 
 Transcription presets: `gpt-transcribe` (default), `gpt-4o-mini-transcribe`, and
 `whisper-1`, with an `openai/` prefix on OpenRouter. Audio is sent to the configured
-transcription endpoint only after **Stop & send**. Silence detection
+transcription endpoint only after **Stop & send** or a detected stop phrase while
+Talk is recording. Silence detection
 avoids submitting empty recordings. Transcripts, relevant track metadata,
 installed plugin names, tempo/meter/grid and timeline/item/marker/send metadata,
+bounded MIDI note previews (pitch, timing, velocity, channel and selection),
 track/option states, project filename,
 relevant action/script names and preferences are sent to the selected command service.
 OpenRouter routes requests to the serving model providers. One OpenRouter key
@@ -614,6 +920,13 @@ sent only on the direct OpenAI transcription route.
 A local Python helper handles audio and HTTPS outside REAPER’s UI thread. Private
 IPC/config files live in `Data/HeyComputer` under REAPER’s resource directory, not the
 source checkout. The helper exits when the panel closes or stops heartbeating.
+REAPER can pause panel updates while a native action or dialog runs. If this lasts
+over 20 seconds, the helper stops and discards queued requests and audio. When the
+panel resumes, it shows **Helper disconnected** instead of failing on a missing
+session folder. Close and reopen HeyComputer to reconnect. Completed edits and
+their receipts remain; interrupted commands are never retried automatically.
+`remote-state.json` is a local status file for the optional remote controls, not a
+REAPER dependency or an upload.
 API keys are never included in model requests as project data, displayed after
 saving, or written to settings/logs. The short-lived key-save IPC request is
 removed before processing and resides in a directory accessible only to the user.
@@ -653,6 +966,8 @@ audio payload formats, settings migration, Keychain separation and HTTP failures
 Extended tests cover musical navigation across tempo/signature changes, displayed
 bar offsets, loop/skip commands, item and marker changes, send feedback prevention,
 rollback, stale selection checks, transport, version naming and action filtering.
+MIDI tests cover combined track/item/note creation, musical patterns, selected
+notes, quantization, filters, source-sharing guards, bounds and rollback.
 Actual model accuracy, latency, audio permissions and plugin behavior need live
 verification with the user’s API keys and hardware.
 Visual tests use synthetic images, mocked providers and OS adapters. They cover
@@ -660,6 +975,10 @@ window/process filtering, memory-only upload payloads, coordinate conversion,
 cancelled responses, stale geometry, step limits, partial-change reporting and
 project guards. macOS framework availability is checked locally; this does not
 establish real capture/input behavior before macOS permissions are granted.
+Wake-word tests cover shared microphone lifetime, bounded idle queues, private
+log rotation, stale/replayed detections, stop-word transcript cleanup and timeout
+discard without uploading. The normal unit suite uses a fake detector; optional
+model checks require `sh scripts/setup_wake.sh` and a local speech fixture.
 
 ### Local test commands
 

@@ -10,9 +10,9 @@ MODES = {'trim_read', 'read', 'touch', 'write', 'latch'}
 SHAPES = {'linear', 'square', 'slow', 'fast_start', 'fast_end'}
 
 
-def validate_automation(a, snapshot, created=0):
-    new_target = a['target'] in ('created', 'first_created') and created > 0
-    if not new_target and a['target'] not in {t['guid'] for t in snapshot.get('tracks', [])}:
+def validate_automation(a, snapshot, created=0, resolved=None):
+    new_target = any(t.get('planned') for t in resolved) if resolved else a['target'] in ('created', 'first_created') and created > 0
+    if not resolved and not new_target and a['target'] not in {t['guid'] for t in snapshot.get('tracks', [])}:
         raise PlanError('Identify the automation track or create it earlier in the plan.')
     if a['op'] == 'automation_mode':
         require(a['value'] in MODES, 'Unsupported track automation mode.')
@@ -22,8 +22,20 @@ def validate_automation(a, snapshot, created=0):
               'automation_state': ({'envelope', 'active', 'visible', 'armed'}, {'envelope'})}
     p = params(a['value'], *fields[a['op']])
     env = p['envelope']
-    require(isinstance(env, dict) and env.get('kind') in ('volume', 'pan', 'mute', 'fx'))
-    if env['kind'] == 'fx':
+    require(isinstance(env, dict) and env.get('kind') in ('volume', 'pan', 'mute', 'fx', 'send_volume'))
+    if env['kind'] == 'send_volume':
+        require(set(env) == {'kind', 'destination'})
+        source = next((t for t in snapshot.get('tracks', []) if t['guid'] == a['target']), None)
+        if source is None:
+            raise PlanError('Send automation needs one exact existing source track GUID.')
+        require(not new_target and (not resolved or len(resolved) == 1 and resolved[0]['guid'] == a['target']),
+                'Send automation needs one exact existing source track GUID.')
+        require(isinstance(env['destination'], str) and env['destination'] in {t['guid'] for t in snapshot.get('tracks', [])},
+                'Send automation needs one exact existing destination track GUID.')
+        require(sum(s.get('destination') == env['destination'] for s in source.get('sends', [])) == 1,
+                'Send automation needs one unambiguous existing track send.')
+    elif env['kind'] == 'fx':
+        require(not resolved or len(resolved) == 1 and resolved[0]['guid'] == a['target'], 'FX automation needs one inspected existing track GUID.')
         require(not new_target, 'Inspect the newly created plugin before automating its parameters.')
         require(set(env) == {'kind', 'fx', 'index', 'name'})
         # State/clear also require an observed parameter identity, not a guessed index.
@@ -40,7 +52,7 @@ def validate_automation(a, snapshot, created=0):
             require(isinstance(point['value'], str) and 1 <= len(point['value']) <= 100)
             require(point['shape'] in SHAPES, 'Unsupported envelope curve shape.')
             kind, text = env['kind'], point['value'].strip().lower()
-            if kind == 'volume':
+            if kind in ('volume', 'send_volume'):
                 match = re.fullmatch(r'([+-]?\d*\.?\d+)\s*db', text)
                 require(text == '-inf db' or match and number(float(match[1]), -150, 12), 'Use a volume in dB.')
             elif kind == 'pan':
@@ -61,8 +73,15 @@ def validate_automation(a, snapshot, created=0):
 
 def validate_combinations(actions):
     # Host indices and envelope handles must not be invalidated by FX chain edits.
-    automated = {a['target'] for a in actions if a['op'] in OPS - {'automation_mode'}}
+    automated = {a['target'] for a in actions if a['op'] in OPS - {'automation_mode'}
+                 and json.loads(a['value'])['envelope']['kind'] == 'fx'}
+    send_automation = any(a['op'] in OPS - {'automation_mode'}
+                          and json.loads(a['value'])['envelope']['kind'] == 'send_volume' for a in actions)
     for a in actions:
+        if send_automation:
+            require(a['op'] not in {'send_create', 'send_set', 'send_delete', 'create_tracks',
+                                    'duplicate_tracks', 'folder_tracks', 'folder_created'},
+                    'Edit routing and track structure separately, then use fresh state for send automation.')
         if a['op'] in {'add_fx', 'delete_fx', 'offline_fx', 'move_fx', 'copy_fx'}:
             destination = json.loads(a['value']).get('destination') if a['op'] in {'move_fx', 'copy_fx'} else None
             require(a['target'] not in automated and destination not in automated,
@@ -70,9 +89,9 @@ def validate_combinations(actions):
 
 
 HELP = """
-Native automation operations target an exact existing track GUID, or created/first_created after create_tracks in the SAME plan. For a new track with volume, pan or mute automation, return ONE complete plan: create_tracks followed by automation_points targeting created (all new child tracks) or first_created (the first new child). Never ask permission just because track creation precedes automation, never mention internal GUID requirements, and never return only the track-creation portion of a supported request. All native steps execute together with rollback. FX automation still requires host inspection of the actual plugin before its envelope can be edited. Envelope edits are supported only while transport is stopped; never silently stop transport. Snapshot automation lists track modes and existing envelope metadata/points. Use automation_mode value=trim_read/read/touch/write/latch ONLY when explicitly requested. Never infer write/latch/touch modes, global overrides, arming or transport recording from a request to draw automation. A mode change follows REAPER’s native envelope auto-arming/showing preferences, but does not start playback/recording. If a global automation override is active, ask the user to clear it rather than silently changing global state.
-Envelope selector is {"kind":"volume"}, {"kind":"pan"}, {"kind":"mute"}, or {"kind":"fx","fx":"exact FX GUID","index":0,"name":"exact inspected parameter name"}. FX automation requires inspect_fx first just like direct parameters, preserving all requested times/curves in the remaining task. Use exposed, automatable parameters; never infer normalized values. Volume points use strings in dB (e.g. "-6 dB", "0 dB", or "-inf dB" for silence), pan strings -100..100 (left negative/right positive, optionally %), mute "on"/"off" (on means muted). FX values use the plugin's displayed units. Do not change track fader/knob settings to draw envelopes.
+Native automation operations target an exact existing track GUID, captured selected/all, created/first_created, or earlier result:N / result:N:K tracks in the SAME plan. Result references support built-in volume/pan/mute envelopes and track modes; FX envelopes still require one inspected existing track GUID. For a new track with volume, pan or mute automation, return ONE complete plan: create_tracks followed by automation_points targeting created (all new child tracks) or first_created (the first new child). Never ask permission just because track creation precedes automation, never mention internal GUID requirements, and never return only the track-creation portion of a supported request. All native steps execute together with rollback. FX automation still requires host inspection of the actual plugin before its envelope can be edited. Envelope edits are supported only while transport is stopped; never silently stop transport. Snapshot automation lists track modes and existing envelope metadata/points. Use automation_mode value=trim_read/read/touch/write/latch ONLY when explicitly requested. Never infer write/latch/touch modes, global overrides, arming or transport recording from a request to draw automation. A mode change follows REAPER’s native envelope auto-arming/showing preferences, but does not start playback/recording. If a global automation override is active, ask the user to clear it rather than silently changing global state.
+Envelope selector is {"kind":"volume"}, {"kind":"pan"}, {"kind":"mute"}, {"kind":"send_volume","destination":"exact existing destination track GUID"}, or {"kind":"fx","fx":"exact FX GUID","index":0,"name":"exact inspected parameter name"}. Send-volume automation targets the exact existing SOURCE track GUID and identifies one existing destination in its snapshot sends; do not use selected/all, created tracks, result references, send indices or hardware outputs. Duplicate sends to that destination are ambiguous and unsupported. Use the same points/clear/state operations and dB values as track volume; absent send envelopes activate natively with the static send volume preserved at time zero, without changing send or track knobs. Routing edits and track creation/duplication/folder changes must be separate requests from send automation; inspect fresh state afterward. Ask about an unspecified reduction amount or timing rather than guessing; never promise transient/audio analysis or audio-following ducking. FX automation requires inspect_fx first just like direct parameters, preserving all requested times/curves in the remaining task. Use exposed, automatable parameters; never infer normalized values. Volume points use strings in dB (e.g. "-6 dB", "0 dB", or "-inf dB" for silence), pan strings -100..100 (left negative/right positive, optionally %), mute "on"/"off" (on means muted). FX values use the plugin's displayed units. Do not change track fader/knob settings to draw envelopes.
 automation_points value={"envelope":SELECTOR,"points":[{"at":{"bar":5},"value":"0 dB","shape":"linear"},{"at":{"bar":9},"value":"-6 dB","shape":"linear"}],"replace":true,"exact":false}. 1–32 points per operation, chronological and distinct. at accepts the same bar/beat, seconds, cursor/selection/region anchors as timeline commands. For repeated hard panning, alternate -100 and 100 with square points at the requested musical intervals; default to starting left if unspecified. "Through bar 4" includes bar 4, ending at the start of bar 5; "to bar 4" ends at the start of bar 4. Use the project meter and quarter-note spacing, not guessed seconds. Split longer patterns into successive bounded operations if needed, never silently truncate them. shape applies to the segment AFTER that point: linear, square, slow, fast_start, fast_end. Mute requires square. For a requested ramp/fade, use its endpoints and replace=true to replace existing points in that span. With replace=false, only points at the supplied times are replaced. Existing points outside edited times/span remain, but adjoining interpolation naturally follows the new points; add explicit boundary points if the user asks to return to a prior value. Do not infer unspecified start/end values from a knob when an envelope exists; use the snapshot's envelope points/current value, or ask. Exact=true only when explicitly requested. Native curves interpolate in envelope space; do not promise a linear-Hz or linear-dB sweep across a nonlinear control scale.
 automation_clear value={"envelope":SELECTOR,"start":{"bar":5},"end":{"bar":9}} removes points only in that inclusive range. It does not delete the envelope, reset the knob, or edit automation items.
-automation_state value={"envelope":SELECTOR,"visible":true} supports optional active/visible/armed booleans; only specified flags change. Point editing activates and shows the target envelope but preserves its armed state (new envelopes are unarmed). Do not arm additional envelopes. These operations don't change track mode automatically. Existing automation items on the target envelope are unsupported; explain instead of drawing over them. No master/take/send envelopes, automation-item editing, pooled items, freehand audio-following, or automatic mixing. Plugin chain edits on affected tracks must be a separate request from envelope edits so identities stay current.
+automation_state value={"envelope":SELECTOR,"visible":true} supports optional active/visible/armed booleans; only specified flags change. Point editing activates and shows the target envelope but preserves its armed state (new envelopes are unarmed). Do not arm additional envelopes. These operations don't change track mode automatically. Existing automation items on the target envelope are unsupported; explain instead of drawing over them. No master/take envelopes, send pan/mute envelopes, automation-item editing, pooled items, freehand audio-following, or automatic mixing. Plugin chain edits on affected tracks must be a separate request from FX envelope edits so identities stay current. Built-in track volume/pan/mute envelopes may be edited alongside plugin insertion or chain changes.
 """

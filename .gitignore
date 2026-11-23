@@ -18,6 +18,7 @@ xcuserdata/
 settings.json
 remote-token.json
 ui-memory.json
+wake-activations*.jsonl
 Data/
 *.log
 *.pem

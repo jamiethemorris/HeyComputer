@@ -59,6 +59,35 @@ class ParametersTests(unittest.TestCase):
                 r = self.response(worker, {'id':'j1','kind':'parameter_continue','snapshot':self.snapshot})
                 self.assertEqual(r['kind'],'error')
 
+    def test_guitar_delay_send_reaches_inspection_through_real_planner(self):
+        text = ('Put a send on my guitar track with Echo Boy set to 100% wet and '
+                'set it to an eighth note ping pong delay, eighth note on both sides.')
+        remaining = 'Set 100% wet and ping pong delay, eighth note on both sides.'
+        snapshot = {'project': 'p', 'timeline': {'play_state': 0},
+                    'tracks': [{'guid': 'guitar', 'selected': True}],
+                    'plugins': [{'id': 'VST3: EchoBoy', 'name': 'VST3: EchoBoy'}]}
+        preparation = {'kind': 'inspect', 'message': remaining, 'lua': '', 'actions': [
+            action('create_tracks', value='Guitar Delay', count=1),
+            action('add_fx', 'created', 'VST3: EchoBoy'),
+            action('send_create', 'guitar', json.dumps({'destination': 'first_created'})),
+            action('inspect_fx', 'created', 'last_added')]}
+        response = {'status': 'completed', 'output': [{'type': 'message', 'content': [
+            {'type': 'output_text', 'text': json.dumps(preparation)}]}]}
+        with tempfile.TemporaryDirectory() as directory:
+            worker = Worker(Path(directory) / 'session')
+            worker.config['use_jev'] = False
+            with patch('heycomputer.providers.api_key', return_value='fixture'), \
+                 patch('heycomputer.providers.request_json', return_value=response) as request, \
+                 patch.object(worker, 'visual_plan') as visual:
+                result = self.response(worker, {'id': 'delay', 'kind': 'plan',
+                                               'text': text, 'snapshot': snapshot})
+            self.assertEqual(result['kind'], 'parameter_prepare', result)
+            self.assertEqual(result['actions'], preparation['actions'])
+            assert worker.parameter_preparation is not None
+            self.assertEqual(worker.parameter_preparation['text'], remaining)
+            self.assertEqual(json.loads(request.call_args.args[2]['input'])['request'], text)
+            visual.assert_not_called()
+
     def test_inspection_loop_is_bounded_and_visual_fallback_preserves_task(self):
         with tempfile.TemporaryDirectory() as directory:
             worker = Worker(Path(directory)/'session')
@@ -72,5 +101,37 @@ class ParametersTests(unittest.TestCase):
             with patch('heycomputer.worker.providers.openai_plan',return_value=dict(result,kind='inspect')):
                 r=self.response(worker,{'id':'j2','kind':'parameter_continue','snapshot':self.snapshot})
             self.assertEqual(r['kind'],'error')
+
+    def test_send_setup_allowed_before_inspection_and_visual_open(self):
+        snapshot = dict(self.snapshot, timeline={'play_state': 0})
+        snapshot['tracks'] = self.snapshot['tracks'] + [{'guid': 'guitar'}]
+        for kind, terminal in (('inspect', 'inspect_fx'), ('vision', 'open_fx')):
+            for op in ('send_create', 'send_set'):
+                with self.subTest(kind=kind, op=op):
+                    result = {'kind': kind, 'message': 'Set the delay to 100% wet.', 'lua': '',
+                              'actions': [action(op, 'guitar', json.dumps({
+                                  'destination': 't1', 'volume_db': -12})),
+                                  action(terminal, 't1', 'fx1')]}
+                    self.assertEqual(validate_result(result, snapshot, allow_vision=True), result)
+
+    def test_send_preparation_preserves_validation_and_operation_limits(self):
+        snapshot = dict(self.snapshot, timeline={'play_state': 0})
+        snapshot['tracks'] = self.snapshot['tracks'] + [{'guid': 'guitar'}]
+        for kind, terminal in (('inspect', 'inspect_fx'), ('vision', 'open_fx')):
+            invalid = [action('send_create', 'missing', '{"destination":"t1"}'),
+                       action('send_create', 'guitar', '{"destination":"missing"}'),
+                       action('send_create', 'guitar', '{"destination":"created"}'),
+                       action('send_create', 'guitar', '{"destination":"result:3"}'),
+                       action('send_create', 'guitar', '{"destination":"t1","volume_db":99}'),
+                       action('send_create', 'guitar', '{"destination":"t1","mode":"hardware"}'),
+                       action('send_set', 'guitar', '{"destination":"t1"}'),
+                       action('send_delete', 'guitar', '{"destination":"t1"}'),
+                       action('transport', 'project', 'record'),
+                       action('set_fx_param', 't1', json.dumps(self.value))]
+            for operation in invalid:
+                with self.subTest(kind=kind, operation=operation), self.assertRaises(PlanError):
+                    validate_result({'kind': kind, 'message': 'Set delay.', 'lua': '',
+                                     'actions': [operation, action(terminal, 't1', 'fx1')]},
+                                    snapshot, allow_vision=True)
 
 if __name__ == '__main__': unittest.main()
