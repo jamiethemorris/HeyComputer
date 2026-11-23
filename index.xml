@@ -5,7 +5,7 @@
       <metadata>
         <link rel="website">https://github.com/jamiethemorris/HeyComputer</link>
       </metadata>
-      <version name="0.2.0" author="HeyComputer contributors" time="2026-11-23T00:00:00Z">
+      <version name="0.2.0" author="jamiethemorris" time="2026-11-23T00:00:00Z">
         <changelog>First ReaPack release with in-panel helper setup.</changelog>
         <source file="reaper/HeyComputer.lua" platform="darwin" main="main">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.0/reaper/HeyComputer.lua</source>
         <source file="heycomputer/__init__.py" platform="darwin">https://github.com/jamiethemorris/HeyComputer/raw/v0.2.0/heycomputer/__init__.py</source>
