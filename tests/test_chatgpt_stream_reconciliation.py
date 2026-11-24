@@ -122,3 +122,22 @@ class StreamReconciliationTests(unittest.TestCase):
             with self.subTest(second_call=second_call), self.assertRaises(PlanError):
                 stream = item_event("done", MUTE) + evidence + completion(MUTE, second_call)
                 _read_stream(io.BytesIO(stream), replay=True)
+
+    def test_missing_content_type_header_is_accepted_while_wrong_type_is_rejected(self):
+        class HeaderStream(StreamResponse):
+            def __init__(self, body, content_type):
+                super().__init__(body)
+                self._content_type = content_type
+
+            def getheader(self, name, default=None):
+                return self._content_type if name.lower() == "content-type" else default
+
+        turn = make_turn({"fallback_provider": "chatgpt"}, lambda: None, access_token="synthetic-stream-fixture")
+        with inline_provider(), patch("http.client.HTTPSConnection") as connect:
+            connect.return_value.getresponse.return_value = HeaderStream(completion(message("OK")), None)
+            output = turn("Inspect.", [{"role": "user", "content": "hi"}], [], 10)
+            self.assertEqual(output, [message("OK")])
+
+            connect.return_value.getresponse.return_value = HeaderStream(completion(message("OK")), "text/html")
+            with self.assertRaisesRegex(PlanError, "unexpected response format"):
+                turn("Inspect.", [{"role": "user", "content": "hi"}], [], 10)

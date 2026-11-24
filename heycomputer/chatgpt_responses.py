@@ -46,7 +46,8 @@ def _request(path, access_token, media_type, read, payload=None, *, timeout=60):
             with closing(connection.getresponse()) as response:
                 if response.status != 200:
                     raise _http_error(response)
-                if response.getheader("Content-Type", "").split(";", 1)[0].strip().lower() != media_type:
+                content_type = response.getheader("Content-Type")
+                if content_type and content_type.split(";", 1)[0].strip().lower() != media_type:
                     raise PlanError("ChatGPT returned an unexpected response format.")
                 result = read(response)
                 reject_reflected_token(result, access_token)
