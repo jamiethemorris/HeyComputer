@@ -311,6 +311,17 @@ def select_tools(specs, text, companion=False):
     if re.search(r'\b(create|add|make|new)\b', text, re.I):
         patterns += ('track_create',)
     chosen = companion_tools(groups) if companion and 'transport_get_state' in specs else {}
+    # Readers the instructions demand before a wider read or edit. Leaving one
+    # out costs a whole model round trip through lookup_reaper_tool.
+    readers = set()
+    if groups & {'item', 'midi', 'marker', 'tempo'}:
+        readers.add('project_get_change_count')
+    if groups & {'item', 'midi'}:
+        readers |= {'item_get_all', 'item_get_info'}
+    if 'tempo' in groups:
+        readers.add('tempo_list_markers')
+    for n in sorted(readers & specs.keys()):
+        chosen[n] = specs[n]
     terms = set(re.findall('[a-z]+', text.casefold()))
     def rank(n):
         return (n not in CORE, -len(terms.intersection(n.split('_'))), n)

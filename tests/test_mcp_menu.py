@@ -58,6 +58,16 @@ class MenuTests(unittest.TestCase):
         mixed = 'track MIDI tempo marker clip routing FX automation parallel compression'
         self.assertLessEqual(len(menu.select_tools(specs, mixed, companion=True)), 32)
 
+    def test_preselection_offers_the_readers_the_instructions_require(self):
+        # A missing reader costs a whole model round trip through lookup_reaper_tool.
+        specs = menu.allowed_specs(DISCOVERED)
+        for text, needed in [('count the midi notes on track one', {'item_get_all', 'midi_count_events'}),
+                             ('split the second item on track one at 4 seconds', {'item_get_all', 'item_split'}),
+                             ('add a marker called chorus at bar 9', {'marker_get_all', 'marker_add'}),
+                             ('list the tempo changes', {'tempo_list_markers'})]:
+            with self.subTest(text=text):
+                self.assertLessEqual(needed | {'project_get_change_count'}, menu.select_tools(specs, text).keys())
+
     def test_nullable_and_legacy_arguments_use_published_schema_plus_old_caps(self):
         from heycomputer.protocol import PlanError
         specs = menu.allowed_specs(DISCOVERED)

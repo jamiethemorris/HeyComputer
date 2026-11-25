@@ -67,6 +67,21 @@ class MCPWorkerTests(unittest.TestCase):
         self.request(text)
         self.assertIn(text, str(self.provider.call_args.args[1]['input']))
 
+    def test_mcp_answer_does_not_hold_the_next_request_on_the_legacy_planner(self):
+        first = self.request('Count the MIDI notes on track one')
+        history = [dict(role='assistant', kind='reply', text=first['message'])]
+        self.request('Split the second item on track one at 4 seconds', history=history)
+        self.assertIn('Split the second item', str(self.provider.call_args.args[1]['input']))
+        self.legacy.assert_not_called()
+
+    def test_answer_to_an_mcp_question_returns_to_mcp(self):
+        self.provider.return_value['output'][0]['content'][0]['text'] = 'Which item?'
+        first = self.request('Split the item on track one at 4 seconds')
+        history = [dict(role='assistant', kind='reply', text=first['message'])]
+        self.request('The second one', history=history)
+        self.assertIn('The second one', str(self.provider.call_args.args[1]['input']))
+        self.legacy.assert_not_called()
+
     def test_legacy_routes_preserve_followup_inspection_and_visual_preparation(self):
         history = [dict(kind='reply', role='assistant', text='Which track?')]
         self.request('The Kick track', history=history)

@@ -78,6 +78,7 @@ class Worker:
         self.busy = False
         self.started = time.time()
         self.shutdown = False
+        self.mcp_reply = None  # Last ReaperMCP answer, to tell it from a legacy clarification.
         self.output_lock = threading.Lock()
         self.desktop = None
         self.cancel_visual = threading.Event()
@@ -322,6 +323,7 @@ class Worker:
             raise PlanError(str(exc)) from exc  # Includes bridge setup guidance.
         except Exception as exc:
             raise PlanError('ReaperMCP request failed. Check REAPER before retrying.') from exc
+        self.mcp_reply = message
         return {'kind': 'reply', 'message': message, 'model': model}
 
     def chatgpt_models(self):
@@ -578,11 +580,20 @@ class Worker:
                     # quick_plan accepts the WHOLE corrected utterance, never a
                     # single step split out of a compound request.
                     direct = providers.quick_plan(text, snapshot)
-                    awaiting = bool(history and history[-1].get('kind') in ('reply', 'lua'))
-                    if direct and (not awaiting or direct['actions'][0]['op'] in ('transport', 'launch_action')):
+                    last = history[-1] if history else {}
+                    awaiting = last.get('kind') in ('reply', 'lua')
+                    # Every ReaperMCP answer is a reply too. Only its questions hold
+                    # the conversation, and their answers go back to ReaperMCP.
+                    if awaiting and self.mcp_reply is not None and last.get('text') == self.mcp_reply:
+                        awaiting = False
+                        mcp_followup = self.mcp_reply.rstrip().endswith('?')
+                    else:
+                        mcp_followup = False
+                    if direct and (not (awaiting or mcp_followup)
+                                   or direct['actions'][0]['op'] in ('transport', 'launch_action')):
                         result = route_result(validate_result(direct, snapshot), text, snapshot, history)
                         return dict(result, transcript=text)
-                    if (not awaiting and mcp_intent(text)
+                    if ((mcp_followup or not awaiting and mcp_intent(text))
                             and snapshot.get('fx_parameters') is None):
                         result = self.mcp_request(text, snapshot, config, history, deadline, job_id)
                         # Already executed; never turn an uncertain write into

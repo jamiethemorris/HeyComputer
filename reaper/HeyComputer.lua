@@ -1,5 +1,5 @@
 -- @description HeyComputer - quiet voice and text commands for REAPER
--- @version 0.2.3
+-- @version 0.2.4
 -- @author jamiethemorris
 -- @metapackage
 -- @provides
